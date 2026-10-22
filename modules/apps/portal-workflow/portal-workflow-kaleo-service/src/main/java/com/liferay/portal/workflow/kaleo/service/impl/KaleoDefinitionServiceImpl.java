@@ -102,7 +102,7 @@ public class KaleoDefinitionServiceImpl extends KaleoDefinitionServiceBaseImpl {
 			serviceContext.getCompanyId(), name);
 
 		_checkPermissions(
-			ActionKeys.DELETE,
+			ActionKeys.DELETE, kaleoDefinition.getCompanyId(),
 			_getGroupId(
 				kaleoDefinition.getGroupId(), kaleoDefinition.getScope()));
 
