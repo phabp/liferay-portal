@@ -198,7 +198,7 @@ public class KaleoDefinitionServiceImpl extends KaleoDefinitionServiceBaseImpl {
 			kaleoDefinitionPersistence.findByPrimaryKey(kaleoDefinitionId);
 
 		_checkPermissions(
-			ActionKeys.ADD_DEFINITION,
+			ActionKeys.ADD_DEFINITION, kaleoDefinition.getCompanyId(),
 			_getGroupId(
 				kaleoDefinition.getGroupId(), kaleoDefinition.getScope()));
 
