@@ -83,11 +83,11 @@ public class KaleoDefinitionServiceImplTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		_company = CompanyTestUtil.addCompany();
-
 		PortalInstances.initCompany(_company);
-
 		_companyAdminUser = UserTestUtil.addCompanyAdminUser(_company);
-
+		_company2 = CompanyTestUtil.addCompany();
+		PortalInstances.initCompany(_company2);
+		_company2AdminUser = UserTestUtil.addCompanyAdminUser(_company2);
 		_configuration = _configurationAdmin.getConfiguration(
 			WorkflowDefinitionConfiguration.class.getName(),
 			StringPool.QUESTION);
@@ -302,6 +302,48 @@ public class KaleoDefinitionServiceImplTest {
 		Assert.assertTrue(activeKaleoDefinition.isActive());
 	}
 
+	@Test
+	public void testActivateKaleoDefinitionFromAnotherCompany()
+		throws Exception {
+
+		KaleoDefinition kaleoDefinition = _addKaleoDefinition();
+
+		ConfigurationTestUtil.saveConfiguration(
+			_configuration,
+			HashMapDictionaryBuilder.<String, Object>put(
+				"company.administrator.can.publish", true
+			).build());
+
+		_setUpPermissionThreadLocal(_company2AdminUser);
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(), _company2AdminUser.getCompanyId());
+
+		Assert.assertFalse(
+			PermissionThreadLocal.getPermissionChecker().isOmniadmin());
+
+		Assert.assertEquals(
+			kaleoDefinition.getCompanyId(), _serviceContext.getCompanyId());
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(),
+			PermissionThreadLocal.getPermissionChecker().getCompanyId());
+
+		PrincipalException principalException = Assert.assertThrows(
+			PrincipalException.class,
+			() -> _kaleoDefinitionService.activateKaleoDefinition(
+				kaleoDefinition.getName(), kaleoDefinition.getVersion(),
+				_serviceContext));
+
+		Assert.assertEquals(
+			PrincipalException.class, principalException.getClass());
+
+		Assert.assertFalse(
+			_kaleoDefinitionLocalService.fetchKaleoDefinition(
+				kaleoDefinition.getName(), _serviceContext
+			).isActive());
+	}
+
 	private void _testActivateKaleoDefinitionWithGroupId() throws Exception {
 		_setUpPermissionThreadLocal(TestPropsValues.getUser());
 
@@ -392,6 +434,37 @@ public class KaleoDefinitionServiceImplTest {
 		Assert.assertNotNull(_addKaleoDefinition());
 	}
 
+	@Test
+	public void testAddKaleoDefinitionFromAnotherCompany()
+		throws Exception {
+
+		ConfigurationTestUtil.saveConfiguration(
+			_configuration,
+			HashMapDictionaryBuilder.<String, Object>put(
+				"company.administrator.can.publish", true
+			).build());
+
+		_setUpPermissionThreadLocal(_company2AdminUser);
+
+		Assert.assertNotEquals(
+			_serviceContext.getCompanyId(),
+			_company2AdminUser.getCompanyId());
+
+		Assert.assertFalse(
+			PermissionThreadLocal.getPermissionChecker().isOmniadmin());
+
+		Assert.assertNotEquals(
+			_serviceContext.getCompanyId(),
+			PermissionThreadLocal.getPermissionChecker().getCompanyId());
+
+		PrincipalException principalException = Assert.assertThrows(
+			PrincipalException.class,
+			this::_addKaleoDefinition);
+
+		Assert.assertEquals(
+			PrincipalException.class, principalException.getClass());
+	}
+
 	private void _testAddKaleoDefinitionWithGroupId() throws Exception {
 		AccountEntry accountEntry = _addAccountEntry();
 
@@ -470,6 +543,55 @@ public class KaleoDefinitionServiceImplTest {
 				_serviceContext);
 
 		Assert.assertFalse(inactiveKaleoDefinition.isActive());
+	}
+
+	@Test
+	public void testDeactivateKaleoDefinitionFromAnotherCompany()
+		throws Exception {
+
+		KaleoDefinition kaleoDefinition = _addKaleoDefinition();
+
+		ConfigurationTestUtil.saveConfiguration(
+			_configuration,
+			HashMapDictionaryBuilder.<String, Object>put(
+				"company.administrator.can.publish", true
+			).build());
+
+		KaleoDefinition activeKaleoDefinition =
+			_kaleoDefinitionLocalService.activateKaleoDefinition(
+				kaleoDefinition.getName(), kaleoDefinition.getVersion(),
+				_serviceContext);
+
+		Assert.assertTrue(activeKaleoDefinition.isActive());
+
+		_setUpPermissionThreadLocal(_company2AdminUser);
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(), _company2AdminUser.getCompanyId());
+
+		Assert.assertFalse(
+			PermissionThreadLocal.getPermissionChecker().isOmniadmin());
+
+		Assert.assertEquals(
+			kaleoDefinition.getCompanyId(), _serviceContext.getCompanyId());
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(),
+			PermissionThreadLocal.getPermissionChecker().getCompanyId());
+
+		PrincipalException principalException = Assert.assertThrows(
+			PrincipalException.class,
+			() -> _kaleoDefinitionService.deactivateKaleoDefinition(
+				kaleoDefinition.getName(), kaleoDefinition.getVersion(),
+				_serviceContext));
+
+		Assert.assertEquals(
+			PrincipalException.class, principalException.getClass());
+
+		Assert.assertTrue(
+			_kaleoDefinitionLocalService.fetchKaleoDefinition(
+				kaleoDefinition.getName(), _serviceContext
+			).isActive());
 	}
 
 	private void _testDeactivateKaleoDefinitionWithGroupId() throws Exception {
@@ -557,6 +679,46 @@ public class KaleoDefinitionServiceImplTest {
 			kaleoDefinition.getName(), _serviceContext);
 
 		Assert.assertNull(
+			_kaleoDefinitionLocalService.fetchKaleoDefinition(
+				kaleoDefinition.getName(), _serviceContext));
+	}
+
+	@Test
+	public void testDeleteKaleoDefinitionFromAnotherCompany()
+		throws Exception {
+
+		KaleoDefinition kaleoDefinition = _addKaleoDefinition();
+
+		ConfigurationTestUtil.saveConfiguration(
+			_configuration,
+			HashMapDictionaryBuilder.<String, Object>put(
+				"company.administrator.can.publish", true
+			).build());
+
+		_setUpPermissionThreadLocal(_company2AdminUser);
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(), _company2AdminUser.getCompanyId());
+
+		Assert.assertFalse(
+			PermissionThreadLocal.getPermissionChecker().isOmniadmin());
+
+		Assert.assertEquals(
+			kaleoDefinition.getCompanyId(), _serviceContext.getCompanyId());
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(),
+			PermissionThreadLocal.getPermissionChecker().getCompanyId());
+
+		PrincipalException principalException = Assert.assertThrows(
+			PrincipalException.class,
+			() -> _kaleoDefinitionService.deleteKaleoDefinition(
+				kaleoDefinition.getName(), _serviceContext));
+
+		Assert.assertEquals(
+			PrincipalException.class, principalException.getClass());
+
+		Assert.assertNotNull(
 			_kaleoDefinitionLocalService.fetchKaleoDefinition(
 				kaleoDefinition.getName(), _serviceContext));
 	}
@@ -719,6 +881,44 @@ public class KaleoDefinitionServiceImplTest {
 				kaleoDefinition.getContent(), false, _serviceContext));
 	}
 
+	@Test
+	public void testUpdateKaleoDefinitionFromAnotherCompany()
+		throws Exception {
+
+		KaleoDefinition kaleoDefinition = _addKaleoDefinition();
+
+		ConfigurationTestUtil.saveConfiguration(
+			_configuration,
+			HashMapDictionaryBuilder.<String, Object>put(
+				"company.administrator.can.publish", true
+			).build());
+
+		_setUpPermissionThreadLocal(_company2AdminUser);
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(), _company2AdminUser.getCompanyId());
+
+		Assert.assertFalse(
+			PermissionThreadLocal.getPermissionChecker().isOmniadmin());
+
+		Assert.assertEquals(
+			kaleoDefinition.getCompanyId(), _serviceContext.getCompanyId());
+
+		Assert.assertNotEquals(
+			kaleoDefinition.getCompanyId(),
+			PermissionThreadLocal.getPermissionChecker().getCompanyId());
+
+		PrincipalException principalException = Assert.assertThrows(
+			PrincipalException.class,
+			() -> _kaleoDefinitionService.updateKaleoDefinition(
+				kaleoDefinition.getExternalReferenceCode(),
+				kaleoDefinition.getKaleoDefinitionId(),
+				RandomTestUtil.randomString(), RandomTestUtil.randomString(),
+				kaleoDefinition.getContent(), false, _serviceContext));
+
+		Assert.assertEquals(
+			PrincipalException.class, principalException.getClass());
+	}
 	private void _testUpdateKaleoDefinitionWithDifferentGroupId()
 		throws Exception {
 
@@ -817,7 +1017,9 @@ public class KaleoDefinitionServiceImplTest {
 	}
 
 	private static Company _company;
+	private static Company _company2;
 	private static User _companyAdminUser;
+	private static User _company2AdminUser;
 	private static Configuration _configuration;
 
 	@Inject
