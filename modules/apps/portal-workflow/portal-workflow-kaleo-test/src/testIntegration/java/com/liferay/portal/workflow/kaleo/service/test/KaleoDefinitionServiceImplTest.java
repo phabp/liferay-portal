@@ -90,9 +90,6 @@ public class KaleoDefinitionServiceImplTest {
 		PortalInstances.initCompany(_company2);
 		_company2AdminUser = UserTestUtil.addCompanyAdminUser(_company2);
 
-		_defaultCompanyAdminUser = UserTestUtil.addCompanyAdminUser(
-			TestPropsValues.getCompany());
-
 		_configuration = _configurationAdmin.getConfiguration(
 			WorkflowDefinitionConfiguration.class.getName(),
 			StringPool.QUESTION);
@@ -400,7 +397,7 @@ public class KaleoDefinitionServiceImplTest {
 
 		// A user with the "checkPermission" attribute set to false
 
-		User user = _addUser();
+		User user = _addUser(_serviceContext.getCompanyId());
 
 		ServiceContext serviceContext =
 			ServiceContextTestUtil.getServiceContext();
@@ -420,13 +417,19 @@ public class KaleoDefinitionServiceImplTest {
 
 		_setUpPermissionThreadLocal(_companyAdminUser);
 
+		ServiceContext companyServiceContext =
+			ServiceContextTestUtil.getServiceContext();
+
+		companyServiceContext.setCompanyId(_company.getCompanyId());
+
 		AssertUtils.assertFailure(
 			PrincipalException.MustHavePermission.class,
 			StringBundler.concat(
 				"User ", _companyAdminUser.getUserId(), " must have ",
 				ActionKeys.ADD_DEFINITION, " permission for ",
 				WorkflowConstants.RESOURCE_NAME, StringPool.SPACE),
-			this::_addKaleoDefinition);
+			() -> _addKaleoDefinition(
+				WorkflowDefinitionConstants.SCOPE_ALL, companyServiceContext));
 
 		// Administrator with "company.administrator.can.publish" enabled
 
@@ -436,8 +439,11 @@ public class KaleoDefinitionServiceImplTest {
 				"company.administrator.can.publish", true
 			).build());
 
-		Assert.assertNotNull(_addKaleoDefinition());
+		Assert.assertNotNull(
+			_addKaleoDefinition(
+				WorkflowDefinitionConstants.SCOPE_ALL, companyServiceContext));
 	}
+
 
 	@Test
 	public void testAddKaleoDefinitionFromAnotherCompany()
@@ -1025,7 +1031,6 @@ public class KaleoDefinitionServiceImplTest {
 	private static Company _company2;
 	private static User _companyAdminUser;
 	private static User _company2AdminUser;
-	private static User _defaultCompanyAdminUser;
 	private static Configuration _configuration;
 
 	@Inject
