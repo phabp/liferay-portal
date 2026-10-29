@@ -85,9 +85,14 @@ public class KaleoDefinitionServiceImplTest {
 		_company = CompanyTestUtil.addCompany();
 		PortalInstances.initCompany(_company);
 		_companyAdminUser = UserTestUtil.addCompanyAdminUser(_company);
+
 		_company2 = CompanyTestUtil.addCompany();
 		PortalInstances.initCompany(_company2);
 		_company2AdminUser = UserTestUtil.addCompanyAdminUser(_company2);
+
+		_defaultCompanyAdminUser = UserTestUtil.addCompanyAdminUser(
+			TestPropsValues.getCompany());
+
 		_configuration = _configurationAdmin.getConfiguration(
 			WorkflowDefinitionConfiguration.class.getName(),
 			StringPool.QUESTION);
@@ -1020,6 +1025,7 @@ public class KaleoDefinitionServiceImplTest {
 	private static Company _company2;
 	private static User _companyAdminUser;
 	private static User _company2AdminUser;
+	private static User _defaultCompanyAdminUser;
 	private static Configuration _configuration;
 
 	@Inject
