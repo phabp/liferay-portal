@@ -5,7 +5,8 @@ metadata:
     annotations:
         gotemplating.fn.crossplane.io/composition-resource-name: liferay-keyring
     labels:
-        {{- $labels | toYaml | nindent 8 }}
+        app: liferay
+        component: cmk-key-ring
     name: {{ $baseName }}-keyring
 spec:
     forProvider:
@@ -18,12 +19,15 @@ metadata:
     annotations:
         gotemplating.fn.crossplane.io/composition-resource-name: liferay-cryptokey
     labels:
-        {{- $labels | toYaml | nindent 8 }}
+        app: liferay
+        component: cmk-key
     name: {{ $baseName }}-key
 spec:
     forProvider:
         keyRingSelector:
-            matchControllerRef: true
+            matchLabels:
+                app: liferay
+                component: cmk-key-ring
         purpose: ENCRYPT_DECRYPT
         rotationPeriod: 86400s
     managementPolicies: {{ $managementPolicies }}
@@ -33,12 +37,12 @@ kind: CryptoKeyIAMMember
 metadata:
     annotations:
         gotemplating.fn.crossplane.io/composition-resource-name: liferay-sql-kms-binding
-    labels:
-        {{- $labels | toYaml | nindent 8 }}
 spec:
     forProvider:
-        cryptoKeyIdRef:
-            name: {{ $baseName }}-key
+        cryptoKeyIdSelector:
+            matchLabels:
+                app: liferay
+                component: cmk-key
         member: serviceAccount:service-{{ $env.projectNumber }}@gcp-sa-cloud-sql.iam.gserviceaccount.com
         role: roles/cloudkms.cryptoKeyEncrypterDecrypter
     managementPolicies: {{ $managementPolicies }}
@@ -48,12 +52,12 @@ kind: CryptoKeyIAMMember
 metadata:
     annotations:
         gotemplating.fn.crossplane.io/composition-resource-name: liferay-storage-kms-binding
-    labels:
-        {{- $labels | toYaml | nindent 8 }}
 spec:
     forProvider:
-        cryptoKeyIdRef:
-            name: {{ $baseName }}-key
+        cryptoKeyIdSelector:
+            matchLabels:
+                app: liferay
+                component: cmk-key
         member: serviceAccount:service-{{ $env.projectNumber }}@gs-project-accounts.iam.gserviceaccount.com
         role: roles/cloudkms.cryptoKeyEncrypterDecrypter
     managementPolicies: {{ $managementPolicies }}

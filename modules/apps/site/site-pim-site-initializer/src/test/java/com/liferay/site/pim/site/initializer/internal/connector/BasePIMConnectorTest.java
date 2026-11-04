@@ -25,6 +25,7 @@ import com.liferay.portal.kernel.test.util.RandomTestUtil;
 import com.liferay.portal.kernel.util.HashMapBuilder;
 import com.liferay.portal.kernel.util.ListUtil;
 import com.liferay.portal.kernel.util.LocaleUtil;
+import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 import com.liferay.portal.search.document.Document;
 import com.liferay.portal.search.filter.ComplexQueryPart;
@@ -44,6 +45,7 @@ import com.liferay.site.pim.site.initializer.connector.PIMConnectorChannelField;
 import com.liferay.site.pim.site.initializer.constants.PIMObjectDefinitionConstants;
 import com.liferay.site.pim.site.initializer.exception.PIMConnectorException;
 import com.liferay.site.pim.site.initializer.internal.link.VariantPIMLinkType;
+import com.liferay.site.pim.site.initializer.internal.util.PIMConnectorFieldMappingsUtil;
 
 import java.io.Serializable;
 
@@ -52,6 +54,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -249,6 +252,15 @@ public class BasePIMConnectorTest {
 			).put(
 				"sourceFieldName", sourceFieldName
 			).put(
+				"type",
+				() -> {
+					if (Validator.isNull(value)) {
+						return null;
+					}
+
+					return PIMConnectorFieldMappingsUtil.TYPE_FIXED_VALUE;
+				}
+			).put(
 				"value", value
 			).build()
 		);
@@ -307,7 +319,8 @@ public class BasePIMConnectorTest {
 	}
 
 	private void _mockVariantPIMLinks(
-			Map<String, String> clusterKeysByExternalReferenceCode)
+			Map<String, String> clusterKeysByExternalReferenceCode,
+			String primaryExternalReferenceCode)
 		throws Exception {
 
 		ObjectDefinition objectDefinition = Mockito.mock(
@@ -333,6 +346,9 @@ public class BasePIMConnectorTest {
 				clusterKeysByExternalReferenceCode.entrySet(),
 				entry -> HashMapBuilder.<String, Serializable>put(
 					"clusterKey", entry.getValue()
+				).put(
+					"primary",
+					Objects.equals(entry.getKey(), primaryExternalReferenceCode)
 				).put(
 					"sourceClassExternalReferenceCode", entry.getKey()
 				).build())
@@ -475,7 +491,8 @@ public class BasePIMConnectorTest {
 				"SKU-1", "CLUSTER-1"
 			).put(
 				"SKU-2", "CLUSTER-1"
-			).build());
+			).build(),
+			"SKU-2");
 
 		Map<String, List<ObjectEntry>> pimProductObjectEntriesMap =
 			_pimConnector.getPIMProductObjectEntriesMap(_COMPANY_ID);
@@ -485,7 +502,7 @@ public class BasePIMConnectorTest {
 			new ArrayList<>(pimProductObjectEntriesMap.keySet()));
 
 		_assertPIMProductObjectEntriesMap(
-			"CLUSTER-1", pimProductObjectEntriesMap, "SKU-1", "SKU-2");
+			"CLUSTER-1", pimProductObjectEntriesMap, "SKU-2", "SKU-1");
 		_assertPIMProductObjectEntriesMap(
 			"SKU-3", pimProductObjectEntriesMap, "SKU-3");
 		_assertPIMProductObjectEntriesMap(

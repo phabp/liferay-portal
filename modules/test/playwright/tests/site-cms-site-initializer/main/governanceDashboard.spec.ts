@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-Liferay-DXP-EULA-2.0.0-2023-06
  */
 
+import {ObjectDefinitionAPI} from '@liferay/object-admin-rest-client-js/v1_0';
 import {type Page, expect, mergeTests} from '@playwright/test';
 
 import {dataApiHelpersTest} from '../../../fixtures/dataApiHelpersTest';
@@ -18,6 +19,7 @@ import {
 	performUserSwitchViaApi,
 } from '../../../utils/performLogin';
 import {cmsPagesTest} from './fixtures/cmsPagesTest';
+import {registerUserCredentials} from './spaces/helpers/roleMembership';
 
 const test = mergeTests(
 	cmsPagesTest,
@@ -96,26 +98,31 @@ function getDocumentHTML(externalReferenceCode: string) {
 	);
 }
 
-async function openBrokenLinksList(
+async function openQualityList(
 	page: Page,
-	spaceName: string,
-	title: string
+	{
+		cardTitle,
+		spaceName,
+		text,
+	}: {cardTitle: string; spaceName: string; text: string}
 ) {
-	const brokenLinksList = page.getByRole('region', {name: 'Broken Links'});
+	const qualityList = page.getByRole('region', {name: cardTitle});
 
 	await expect(async () => {
 		await page.goto('/web/cms/dashboard');
 
 		await selectSpace(page, spaceName);
 
-		await page.getByRole('button', {name: /^Broken Links /}).click();
+		await page
+			.getByRole('button', {name: new RegExp(`^${cardTitle} `)})
+			.click();
 
-		await expect(
-			brokenLinksList.getByText(title, {exact: true})
-		).toBeVisible({timeout: 5000});
+		await expect(qualityList.getByText(text, {exact: true})).toBeVisible({
+			timeout: 5000,
+		});
 	}).toPass();
 
-	return brokenLinksList;
+	return qualityList;
 }
 
 async function pollDate(
@@ -159,6 +166,103 @@ async function updateExpirationDate(
 	await fillScheduleDateModal(page, expirationDate);
 }
 
+async function addSpaceMember(
+	apiHelpers: DataApiHelpers,
+	space: {externalReferenceCode: string},
+	user: TUserAccount,
+	roleName?: string
+) {
+	await apiHelpers.headlessAssetLibrary.putAssetLibraryUserAccount(
+		space.externalReferenceCode,
+		user.externalReferenceCode
+	);
+
+	if (roleName) {
+		await apiHelpers.headlessAssetLibrary.putAssetLibraryUserAccountRoles(
+			space.externalReferenceCode,
+			user.externalReferenceCode,
+			[roleName]
+		);
+	}
+}
+
+async function addSpaceWithOverdueContent(
+	apiHelpers: DataApiHelpers,
+	spaceName: string,
+	title: string
+) {
+	const space = await apiHelpers.headlessAssetLibrary.createSpace({
+		name: spaceName,
+	});
+
+	const overdueContent = await apiHelpers.objectEntry.postObjectEntry(
+		{
+			displayDate: PAST_DATE,
+			objectEntryFolderExternalReferenceCode: 'L_CONTENTS',
+			reviewDate: PAST_DATE,
+			title,
+		},
+		APPLICATION_NAME,
+		spaceName
+	);
+
+	apiHelpers.data.push({id: overdueContent.id, type: 'document'});
+
+	return space;
+}
+
+async function addSpaceMemberAndSwitch(
+	apiHelpers: DataApiHelpers,
+	page: Page,
+	spaceName: string,
+	roleName?: string
+) {
+	const space = await apiHelpers.headlessAssetLibrary.createSpace({
+		name: spaceName,
+	});
+
+	const user = await apiHelpers.headlessAdminUser.postUserAccount();
+
+	registerUserCredentials(user);
+
+	await addSpaceMember(apiHelpers, space, user, roleName);
+
+	await performUserSwitchViaApi(page, user.alternateName);
+}
+
+async function expectNoDashboardAccess(page: Page) {
+	await page.goto('/web/cms/home');
+
+	await expect(page.getByRole('menuitem', {name: 'Home'})).toBeVisible();
+
+	await expect(page.getByRole('menuitem', {name: 'Dashboard'})).toBeHidden();
+
+	await page.goto('/web/cms/dashboard');
+
+	await expect(
+		page.getByText('The requested resource could not be found.')
+	).toBeVisible();
+}
+
+async function expectSpaceOption(
+	page: Page,
+	spaceName: string,
+	visible: boolean
+) {
+	const searchInput = page.getByRole('textbox', {name: 'Search'});
+
+	await searchInput.fill(spaceName);
+
+	const option = page.getByRole('option', {name: spaceName});
+
+	if (visible) {
+		await expect(option).toBeVisible();
+	}
+	else {
+		await expect(option).toBeHidden();
+	}
+}
+
 async function selectSpace(page: Page, spaceName: string) {
 	const searchInput = page.getByRole('textbox', {name: 'Search'});
 
@@ -184,13 +288,9 @@ test.describe('Freshness section', () => {
 		'Stores the review date the user picked in their account time zone rather than the browser one',
 		{tag: ['@LPD-98462', '@LPD-104263']},
 		async ({apiHelpers, page}) => {
-			const spaceName = `space ${getRandomString()}`;
 			const title = `overdue ${getRandomString()}`;
 
-			await apiHelpers.headlessAssetLibrary.createAssetLibrary({
-				name: spaceName,
-				type: 'Space',
-			});
+			const space = await apiHelpers.headlessAssetLibrary.createSpace();
 
 			const overdueContent = await apiHelpers.objectEntry.postObjectEntry(
 				{
@@ -200,14 +300,14 @@ test.describe('Freshness section', () => {
 					title,
 				},
 				APPLICATION_NAME,
-				spaceName
+				space.name
 			);
 
 			apiHelpers.data.push({id: overdueContent.id, type: 'document'});
 
 			await page.goto('/web/cms/dashboard');
 
-			await selectSpace(page, spaceName);
+			await selectSpace(page, space.name);
 
 			await page.getByRole('button', {name: /^Overdue Reviews/}).click();
 
@@ -243,14 +343,12 @@ test.describe('Freshness section', () => {
 			>[];
 
 			await test.step('Create overdue contents in two spaces', async () => {
-				await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+				await apiHelpers.headlessAssetLibrary.createSpace({
 					name: firstSpaceName,
-					type: 'Space',
 				});
 
-				await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+				await apiHelpers.headlessAssetLibrary.createSpace({
 					name: secondSpaceName,
-					type: 'Space',
 				});
 
 				const postOverdueContent = (spaceName: string, title: string) =>
@@ -406,14 +504,12 @@ test.describe('Freshness section', () => {
 			>[];
 
 			await test.step('Create and expire contents in two spaces', async () => {
-				await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+				await apiHelpers.headlessAssetLibrary.createSpace({
 					name: firstSpaceName,
-					type: 'Space',
 				});
 
-				await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+				await apiHelpers.headlessAssetLibrary.createSpace({
 					name: secondSpaceName,
-					type: 'Space',
 				});
 
 				const postExpiredContent = async (
@@ -606,9 +702,8 @@ test.describe('Quality section', () => {
 					expiredTitle: string,
 					referringTitle: string
 				) => {
-					await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+					await apiHelpers.headlessAssetLibrary.createSpace({
 						name: spaceName,
-						type: 'Space',
 					});
 
 					const expiredContent =
@@ -668,19 +763,19 @@ test.describe('Quality section', () => {
 			});
 
 			await test.step('Confirm the second space lists its own broken link', async () => {
-				await openBrokenLinksList(
-					page,
-					secondSpaceName,
-					secondSpaceReferringTitle
-				);
+				await openQualityList(page, {
+					cardTitle: 'Broken Links',
+					spaceName: secondSpaceName,
+					text: secondSpaceReferringTitle,
+				});
 			});
 
 			await test.step('Check that only the first space is listed', async () => {
-				const brokenLinksList = await openBrokenLinksList(
-					page,
-					firstSpaceName,
-					referringTitle
-				);
+				const brokenLinksList = await openQualityList(page, {
+					cardTitle: 'Broken Links',
+					spaceName: firstSpaceName,
+					text: referringTitle,
+				});
 
 				await expect(
 					brokenLinksList.getByText('1 Expired Asset', {exact: true})
@@ -718,122 +813,171 @@ test.describe('Quality section', () => {
 			});
 		}
 	);
-});
 
-test.describe('Duplication and Similarity section', () => {
 	test(
-		'Groups the duplicated topics of the selected space by the title they repeat',
-		{tag: ['@LPD-102887', '@LPD-103246']},
+		'Lists the contents missing a required field added to their published content structure',
+		{tag: '@LPD-110645'},
 		async ({apiHelpers, page}) => {
-			const firstSpaceName = `space ${getRandomString()}`;
-			const secondSpaceName = `space ${getRandomString()}`;
+			const spaceName = `space ${getRandomString()}`;
+			const title = `content ${getRandomString()}`;
 
-			const firstSpaceTitle = `duplicated ${getRandomString()}`;
-			const secondSpaceTitles = [
-				`Duplicated ${getRandomString()}`,
-				`duplicated ${getRandomString()}`,
-			];
-			const uniqueTitle = `unique ${getRandomString()}`;
+			let applicationName: string;
+			let objectDefinitionId: number;
+			let objectEntryId: number;
 
-			const duplicateTopicsCard = page.getByRole('button', {
-				name: /Duplicate Topics/,
-			});
-
-			const duplicateTopicsCount = duplicateTopicsCard
-				.locator('.cms-dashboard__interactive-card__metric > div')
-				.first();
-
-			async function expectDuplicateTopicsCount(
-				spaceName: string,
-				count: string
-			) {
-
-				// The counter comes from a search aggregation, so the indexer may
-				// still be behind. Reloading gives the picker a clean state and
-				// refetches the counter for the space.
-
-				await expect(async () => {
-					await page.goto('/web/cms/dashboard');
-
-					await selectSpace(page, spaceName);
-
-					await expect(duplicateTopicsCount).toHaveText(count, {
-						timeout: 10000,
-					});
-				}).toPass({timeout: 90000});
-			}
-
-			await test.step('Create contents that repeat a title in two spaces', async () => {
-				for (const spaceName of [firstSpaceName, secondSpaceName]) {
-					await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+			await test.step('Publish a content of a versioned content structure', async () => {
+				const space = await apiHelpers.headlessAssetLibrary.createSpace(
+					{
 						name: spaceName,
-						type: 'Space',
-					});
-				}
+					}
+				);
 
-				const postContent = (spaceName: string, title: string) =>
-					apiHelpers.objectEntry.postObjectEntry(
+				const objectDefinitionAPIClient =
+					await apiHelpers.buildRestClient(ObjectDefinitionAPI);
+
+				const {body: objectDefinition} =
+					await objectDefinitionAPIClient.postObjectDefinition({
+						enableComments: true,
+						enableFriendlyURLCustomization: true,
+						enableIndexSearch: true,
+						enableLocalization: true,
+						enableObjectEntryDraft: true,
+						enableObjectEntryHistory: true,
+						enableObjectEntrySchedule: true,
+						enableObjectEntryVersioning: true,
+						externalReferenceCode: getRandomString(),
+						label: {en_US: getRandomString()},
+						name: `Structure${getRandomInt()}`,
+						objectDefinitionSettings: [
+							{
+								name: 'acceptedGroupExternalReferenceCodes',
+								value: space.externalReferenceCode,
+							} as any,
+						],
+						objectFields: [
+							{
+								DBType: 'String',
+								businessType: 'Text',
+								externalReferenceCode: getRandomString(),
+								indexed: true,
+								indexedAsKeyword: false,
+								indexedLanguageId: 'en_US',
+								label: {en_US: 'Title'},
+								localized: true,
+								name: 'title',
+								required: true,
+							},
+						],
+						objectFolderExternalReferenceCode:
+							'L_CMS_CONTENT_STRUCTURES',
+						pluralLabel: {en_US: getRandomString()},
+						scope: 'depot',
+						status: {code: 0},
+						titleObjectFieldName: 'title',
+					});
+
+				apiHelpers.data.push({
+					id: objectDefinition.id as number,
+					type: 'objectDefinition',
+				});
+
+				applicationName = (
+					objectDefinition.restContextPath as string
+				).replace(/^\/o\//, '');
+				objectDefinitionId = objectDefinition.id as number;
+
+				const objectEntry =
+					await apiHelpers.objectEntry.postObjectEntry(
 						{
 							objectEntryFolderExternalReferenceCode:
 								'L_CONTENTS',
 							title,
 						},
-						APPLICATION_NAME,
+						applicationName,
 						spaceName
 					);
 
-				const contents = [
-					await postContent(firstSpaceName, firstSpaceTitle),
-					await postContent(firstSpaceName, firstSpaceTitle),
-					await postContent(firstSpaceName, uniqueTitle),
-					await postContent(secondSpaceName, secondSpaceTitles[0]),
-					await postContent(secondSpaceName, secondSpaceTitles[0]),
-					await postContent(secondSpaceName, secondSpaceTitles[0]),
-					await postContent(secondSpaceName, secondSpaceTitles[1]),
-					await postContent(secondSpaceName, secondSpaceTitles[1]),
-				];
-
-				for (const content of contents) {
-					apiHelpers.data.push({id: content.id, type: 'document'});
-
-					expect(content.id).toBeTruthy();
-				}
+				objectEntryId = objectEntry.id;
 			});
 
-			await test.step('Count only the contents of the selected space', async () => {
-				await expectDuplicateTopicsCount(firstSpaceName, '2');
-
-				await expectDuplicateTopicsCount(secondSpaceName, '5');
+			await test.step('Add a required field to the published structure', async () => {
+				await apiHelpers.objectAdmin.postObjectDefinitionObjectField(
+					objectDefinitionId,
+					{
+						DBType: 'String',
+						businessType: 'Text',
+						externalReferenceCode: getRandomString(),
+						indexed: true,
+						indexedAsKeyword: false,
+						indexedLanguageId: 'en_US',
+						label: {en_US: 'Summary'},
+						localized: true,
+						name: 'summary',
+						required: true,
+					}
+				);
 			});
 
-			await test.step('Review the duplicates grouped by their title', async () => {
-				await duplicateTopicsCard.click();
-
-				const modal = page.locator('.modal-full-screen .modal-content');
+			await test.step('Check the dashboard lists the content with its missing field', async () => {
+				const missingRequiredDataList = await openQualityList(page, {
+					cardTitle: 'Missing Required Data',
+					spaceName,
+					text: title,
+				});
 
 				await expect(
-					modal.getByText(`${secondSpaceTitles[0]} (3)`)
+					missingRequiredDataList.getByText(
+						'1 Missing Required Field',
+						{exact: true}
+					)
 				).toBeVisible();
+			});
+
+			await test.step('Open the missing required data page of the space', async () => {
+				await page
+					.getByRole('link', {name: 'View All Missing Required Data'})
+					.click();
+
+				await expect(page).toHaveURL(/missing-required-data\?groupId=/);
 
 				await expect(
-					modal.getByText(`${secondSpaceTitles[1]} (2)`)
+					page.getByText(title, {exact: true})
 				).toBeVisible();
+			});
+
+			await test.step('Offer only the edit action in the page', async () => {
+				await page
+					.getByRole('button', {name: `${title} Actions`})
+					.click();
+
+				const editMenuItem = page.getByRole('menuitem', {name: 'Edit'});
+
+				await expect(editMenuItem).toBeVisible();
 
 				await expect(
-					modal.getByText(secondSpaceTitles[0], {exact: true})
-				).toHaveCount(3);
+					page.getByRole('menuitem', {name: 'View'})
+				).toBeHidden();
 
-				await expect(modal.getByText(uniqueTitle)).toHaveCount(0);
+				await editMenuItem.click();
 
-				await expect(
-					modal.getByRole('button', {name: /^Edit /})
-				).toHaveCount(5);
+				await expect(page.getByLabel('Title')).toHaveValue(title);
+			});
 
-				// Editing is the only action a row offers.
+			await test.step('Check the content leaves the list once the field is filled', async () => {
+				const objectEntry =
+					await apiHelpers.objectEntry.patchObjectEntry(
+						{summary_i18n: {en_US: getRandomString()}},
+						applicationName,
+						objectEntryId
+					);
 
-				await expect(
-					modal.locator('.list-group-item button')
-				).toHaveCount(5);
+				expect(objectEntry.id).toBe(objectEntryId);
+
+				await openQualityList(page, {
+					cardTitle: 'Missing Required Data',
+					spaceName,
+					text: 'No Missing Required Data',
+				});
 			});
 		}
 	);
@@ -850,9 +994,8 @@ test.describe('Operations section', () => {
 			let draftTitle: string;
 
 			await test.step('Create contents in every status', async () => {
-				await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+				await apiHelpers.headlessAssetLibrary.createSpace({
 					name: spaceName,
-					type: 'Space',
 				});
 
 				const postContent = async (body: object = {}) => {
@@ -966,9 +1109,8 @@ test.describe('Operations section', () => {
 			const recentDraftTitle = `draft ${getRandomString()}`;
 
 			await test.step('Create a long-standing draft and a recent one', async () => {
-				await apiHelpers.headlessAssetLibrary.createAssetLibrary({
+				await apiHelpers.headlessAssetLibrary.createSpace({
 					name: spaceName,
-					type: 'Space',
 				});
 
 				const drafts = [];
@@ -1086,6 +1228,120 @@ test.describe('Operations section', () => {
 					page.getByText(recentDraftTitle, {exact: true})
 				).toBeHidden();
 			});
+		}
+	);
+});
+
+test.describe('Permissions', () => {
+	test.beforeEach(async ({page}) => {
+		await performUserSwitchViaApi(page, 'test');
+	});
+
+	test(
+		'A Space Administrator only sees the data and the spaces they administer',
+		{tag: '@LPD-111502'},
+		async ({apiHelpers, page}) => {
+			const administeredSpaceName = `space ${getRandomString()}`;
+			const administeredTitle = `overdue ${getRandomString()}`;
+			const reviewedSpaceName = `space ${getRandomString()}`;
+			const reviewedTitle = `overdue ${getRandomString()}`;
+
+			const administeredSpace = await addSpaceWithOverdueContent(
+				apiHelpers,
+				administeredSpaceName,
+				administeredTitle
+			);
+
+			const reviewedSpace = await addSpaceWithOverdueContent(
+				apiHelpers,
+				reviewedSpaceName,
+				reviewedTitle
+			);
+
+			const user = await apiHelpers.headlessAdminUser.postUserAccount();
+
+			registerUserCredentials(user);
+
+			await addSpaceMember(
+				apiHelpers,
+				administeredSpace,
+				user,
+				'Asset Library Administrator'
+			);
+			await addSpaceMember(
+				apiHelpers,
+				reviewedSpace,
+				user,
+				'Asset Library Content Reviewer'
+			);
+
+			await performUserSwitchViaApi(page, user.alternateName);
+
+			await page.goto('/web/cms/home');
+
+			await page.getByRole('menuitem', {name: 'Dashboard'}).click();
+
+			await expect(
+				page.getByRole('button', {exact: true, name: 'Governance'})
+			).toBeVisible();
+
+			await test.step('Lists only the content of the administered space', async () => {
+				await page
+					.getByRole('button', {name: /^Overdue Reviews/})
+					.click();
+
+				const overdueReviewsList = page.getByRole('region', {
+					name: 'Overdue Reviews',
+				});
+
+				await expect(
+					overdueReviewsList.getByText(administeredTitle, {
+						exact: true,
+					})
+				).toBeVisible();
+
+				await expect(
+					overdueReviewsList.getByText(reviewedTitle, {exact: true})
+				).toBeHidden();
+			});
+
+			await test.step('Offers only the administered space in the filter', async () => {
+				await page
+					.getByRole('combobox', {name: 'Filter by Spaces'})
+					.click();
+
+				await expectSpaceOption(page, administeredSpaceName, true);
+				await expectSpaceOption(page, reviewedSpaceName, false);
+			});
+		}
+	);
+
+	test(
+		'A Space Content Reviewer does not see the Governance tab',
+		{tag: '@LPD-111502'},
+		async ({apiHelpers, page}) => {
+			await addSpaceMemberAndSwitch(
+				apiHelpers,
+				page,
+				`space ${getRandomString()}`,
+				'Asset Library Content Reviewer'
+			);
+
+			await expectNoDashboardAccess(page);
+		}
+	);
+
+	test(
+		'A Space Member does not see the Governance tab',
+		{tag: '@LPD-111502'},
+		async ({apiHelpers, page}) => {
+			await addSpaceMemberAndSwitch(
+				apiHelpers,
+				page,
+				`space ${getRandomString()}`
+			);
+
+			await expectNoDashboardAccess(page);
 		}
 	);
 });

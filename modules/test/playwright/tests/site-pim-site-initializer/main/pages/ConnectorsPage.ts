@@ -97,8 +97,28 @@ export class ConnectorsPage {
 		return this.dataSetFragmentPage.getRow(name).getByRole('link', {name});
 	}
 
+	getConnectorLastExecutionStatus(name: string) {
+		return this.dataSetFragmentPage
+			.getRow(name)
+			.locator('.cell-lastExecutionStatus .label');
+	}
+
+	getConnectorLastExecutionDate(name: string) {
+		return this.dataSetFragmentPage
+			.getRow(name)
+			.locator('.cell-lastExecutionDate');
+	}
+
+	getConnectorMappingStatus(name: string) {
+		return this.dataSetFragmentPage
+			.getRow(name)
+			.locator('.cell-mappingStatus .label');
+	}
+
 	getConnectorStatus(name: string) {
-		return this.dataSetFragmentPage.getRow(name).locator('.label');
+		return this.dataSetFragmentPage
+			.getRow(name)
+			.locator('.cell-active .label');
 	}
 
 	async openConnectorSchedule(name: string) {

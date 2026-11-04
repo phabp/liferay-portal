@@ -11,7 +11,7 @@ describe('GovernanceService.getAssetStatistics', () => {
 		jest.restoreAllMocks();
 	});
 
-	it('scopes both requests by assetLibraryId when a space is given', () => {
+	it('scopes the request by assetLibraryId when a space is given', () => {
 		const getSpy = jest
 			.spyOn(ApiHelper, 'get')
 			.mockResolvedValue({data: {}, error: null} as any);
@@ -20,11 +20,6 @@ describe('GovernanceService.getAssetStatistics', () => {
 
 		expect(getSpy).toHaveBeenCalledWith(
 			'/o/headless-cms/v1.0/asset-statistics?assetLibraryId=123&',
-			undefined
-		);
-
-		expect(getSpy).toHaveBeenCalledWith(
-			'/o/headless-cms/v1.0/similarity-clusters?assetLibraryId=123&pageSize=1',
 			undefined
 		);
 	});
@@ -40,14 +35,9 @@ describe('GovernanceService.getAssetStatistics', () => {
 			'/o/headless-cms/v1.0/asset-statistics?',
 			undefined
 		);
-
-		expect(getSpy).toHaveBeenCalledWith(
-			'/o/headless-cms/v1.0/similarity-clusters?pageSize=1',
-			undefined
-		);
 	});
 
-	it('passes the abort signal to both requests', () => {
+	it('passes the abort signal to the request', () => {
 		const getSpy = jest
 			.spyOn(ApiHelper, 'get')
 			.mockResolvedValue({data: {}, error: null} as any);
@@ -60,39 +50,6 @@ describe('GovernanceService.getAssetStatistics', () => {
 			'/o/headless-cms/v1.0/asset-statistics?',
 			signal
 		);
-
-		expect(getSpy).toHaveBeenCalledWith(
-			'/o/headless-cms/v1.0/similarity-clusters?pageSize=1',
-			signal
-		);
-	});
-
-	it('counts the assets in similarity clusters as the duplicated count', async () => {
-		jest.spyOn(ApiHelper, 'get').mockImplementation(((url: string) => {
-			if (url.includes('similarity-clusters')) {
-				return Promise.resolve({data: {totalCount: 5}, error: null});
-			}
-
-			return Promise.resolve({data: {brokenLinksCount: 0}, error: null});
-		}) as any);
-
-		const {data} = await GovernanceService.getAssetStatistics();
-
-		expect(data?.duplicatedCount).toBe(5);
-	});
-
-	it('leaves the duplicated count unset when the clusters are unavailable', async () => {
-		jest.spyOn(ApiHelper, 'get').mockImplementation(((url: string) => {
-			if (url.includes('similarity-clusters')) {
-				return Promise.resolve({data: null, error: 'Not Found'});
-			}
-
-			return Promise.resolve({data: {brokenLinksCount: 0}, error: null});
-		}) as any);
-
-		const {data} = await GovernanceService.getAssetStatistics();
-
-		expect(data?.duplicatedCount).toBeUndefined();
 	});
 });
 
@@ -107,7 +64,7 @@ describe('GovernanceService.getContentProgress', () => {
 			.spyOn(ApiHelper, 'post')
 			.mockResolvedValue({data: {}, error: null} as any);
 
-		GovernanceService.getContentProgress('someFilter');
+		GovernanceService.getContentProgress('someFilter', []);
 
 		expect(postSpy).toHaveBeenCalledWith(
 			'/o/search/v1.0/search?filter=someFilter',
@@ -131,12 +88,28 @@ describe('GovernanceService.getContentProgress', () => {
 			.spyOn(ApiHelper, 'post')
 			.mockResolvedValue({data: {}, error: null} as any);
 
-		GovernanceService.getContentProgress('someFilter', 123);
+		GovernanceService.getContentProgress('someFilter', [123]);
 
 		const [url] = postSpy.mock.calls[0];
 
 		expect(url).toBe(
 			'/o/search/v1.0/search?filter=someFilter+and+groupIds%2Fany%28g%3Ag+eq+123%29'
+		);
+	});
+
+	it('scopes the filter to every given group', () => {
+		const postSpy = jest
+			.spyOn(ApiHelper, 'post')
+			.mockResolvedValue({data: {}, error: null} as any);
+
+		GovernanceService.getContentProgress('someFilter', [123, 456]);
+
+		const [url] = postSpy.mock.calls[0];
+
+		expect(
+			new URL(url, 'http://localhost').searchParams.get('filter')
+		).toBe(
+			'someFilter and (groupIds/any(g:g eq 123) or groupIds/any(g:g eq 456))'
 		);
 	});
 
@@ -149,7 +122,7 @@ describe('GovernanceService.getContentProgress', () => {
 			.spyOn(ApiHelper, 'post')
 			.mockResolvedValue({data: {}, error: null} as any);
 
-		GovernanceService.getContentProgress('someFilter', 123, 7);
+		GovernanceService.getContentProgress('someFilter', [123], 7);
 
 		const [url] = postSpy.mock.calls[0];
 
@@ -176,7 +149,7 @@ describe('GovernanceService.getContributors', () => {
 	it('requests the top seven contributors scoped to the given space', async () => {
 		const postSpy = mockContributorsSearch([], 0);
 
-		await GovernanceService.getContributors('someFilter', 123);
+		await GovernanceService.getContributors('someFilter', [123]);
 
 		expect(postSpy).toHaveBeenCalledWith(
 			'/o/search/v1.0/search?filter=someFilter+and+groupIds%2Fany%28g%3Ag+eq+123%29&pageSize=1',
@@ -215,8 +188,10 @@ describe('GovernanceService.getContributors', () => {
 						} as any)
 			);
 
-		const {data, error} =
-			await GovernanceService.getContributors('someFilter');
+		const {data, error} = await GovernanceService.getContributors(
+			'someFilter',
+			[]
+		);
 
 		expect(getSpy).toHaveBeenCalledWith(
 			'/o/headless-admin-user/v1.0/user-accounts/1'
@@ -243,8 +218,10 @@ describe('GovernanceService.getContributors', () => {
 			status: 'FORBIDDEN',
 		} as any);
 
-		const {data, error} =
-			await GovernanceService.getContributors('someFilter');
+		const {data, error} = await GovernanceService.getContributors(
+			'someFilter',
+			[]
+		);
 
 		expect(data).toBeNull();
 		expect(error).toBe('Forbidden');
@@ -270,7 +247,8 @@ describe('GovernanceService.getContentAgeDistribution', () => {
 
 		await GovernanceService.getContentAgeDistribution(
 			'someFilter',
-			'createDate'
+			'createDate',
+			[]
 		);
 
 		expect(postSpy).toHaveBeenCalledWith(
@@ -307,7 +285,7 @@ describe('GovernanceService.getContentAgeDistribution', () => {
 		await GovernanceService.getContentAgeDistribution(
 			'someFilter',
 			'modified',
-			123
+			[123]
 		);
 
 		const [url, body] = postSpy.mock.calls[0];
@@ -343,7 +321,8 @@ describe('GovernanceService.getContentAgeDistribution', () => {
 
 		const {data, error} = await GovernanceService.getContentAgeDistribution(
 			'someFilter',
-			'createDate'
+			'createDate',
+			[]
 		);
 
 		expect(data).toEqual([3, 0, 0, 7, 0]);
@@ -358,7 +337,8 @@ describe('GovernanceService.getContentAgeDistribution', () => {
 
 		const {data, error} = await GovernanceService.getContentAgeDistribution(
 			'someFilter',
-			'createDate'
+			'createDate',
+			[]
 		);
 
 		expect(data).toBeNull();
@@ -384,6 +364,20 @@ describe('GovernanceService.getBrokenLinkAssetsURL', () => {
 	it('scopes the request by assetLibraryId when a space is given', () => {
 		expect(GovernanceService.getBrokenLinkAssetsURL('123')).toBe(
 			'/o/headless-cms/v1.0/broken-link-assets?pageSize=8&sort=title%3Aasc&assetLibraryId=123'
+		);
+	});
+});
+
+describe('GovernanceService.getMissingRequiredFieldsAssetsURL', () => {
+	it('requests the first page of missing required fields assets sorted by title', () => {
+		expect(GovernanceService.getMissingRequiredFieldsAssetsURL()).toBe(
+			'/o/headless-cms/v1.0/missing-required-fields-assets?pageSize=8&sort=title%3Aasc'
+		);
+	});
+
+	it('scopes the request by assetLibraryId when a space is given', () => {
+		expect(GovernanceService.getMissingRequiredFieldsAssetsURL('123')).toBe(
+			'/o/headless-cms/v1.0/missing-required-fields-assets?pageSize=8&sort=title%3Aasc&assetLibraryId=123'
 		);
 	});
 });

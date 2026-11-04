@@ -37,7 +37,7 @@ async function createPrompt(
 	name: string,
 	promptStatusKey: 'active' | 'inactive' = 'active'
 ): Promise<ObjectEntry> {
-	const prompt = await apiHelpers.objectEntry.postObjectEntry(
+	return apiHelpers.objectEntry.postObjectEntry(
 		{
 			description: `Created by Playwright ${name}`,
 			identifier: name,
@@ -47,14 +47,6 @@ async function createPrompt(
 		},
 		PROMPTS_API
 	);
-
-	apiHelpers.data.push({
-		applicationName: PROMPTS_API,
-		id: prompt.id,
-		type: 'objectEntry',
-	});
-
-	return prompt;
 }
 
 const test = baseTest.extend<{
@@ -326,45 +318,6 @@ test.describe('Prompts - Detail (Create / Edit)', () => {
 	);
 
 	test(
-		'Stops auto-generating the identifier after a manual edit',
-		{tag: '@LPD-98450'},
-		async ({promptsPage}) => {
-			await promptsPage.goto();
-			await promptsPage.newPromptButton.click();
-
-			await promptsPage.nameInput.fill('First Name');
-
-			await expect(promptsPage.identifierInput).toHaveValue('first-name');
-
-			const identifier = promptName();
-
-			await promptsPage.identifierInput.fill(identifier);
-
-			await promptsPage.nameInput.fill('Second Name');
-
-			await expect(promptsPage.identifierInput).toHaveValue(identifier);
-		}
-	);
-
-	test(
-		'Shows a format error for an invalid identifier',
-		{tag: '@LPD-98450'},
-		async ({promptsPage}) => {
-			await promptsPage.goto();
-			await promptsPage.newPromptButton.click();
-
-			await promptsPage.identifierInput.fill('Invalid_Identifier');
-			await promptsPage.saveButton.click();
-
-			await expect(
-				promptsPage.identifierInput
-			).toHaveAccessibleDescription(
-				/Please enter a valid identifier \(lowercase letters and numbers separated by single hyphens\)\./
-			);
-		}
-	);
-
-	test(
 		'Shows a required-field error on Name, Identifier, Description, and Prompt',
 		{tag: '@LPD-98309'},
 		async ({promptsPage}) => {
@@ -383,27 +336,6 @@ test.describe('Prompts - Detail (Create / Edit)', () => {
 				promptsPage.descriptionInput
 			).toHaveAccessibleDescription(/This field is required\./);
 			await expect(promptsPage.promptInput).toHaveAccessibleDescription(
-				/This field is required\./
-			);
-		}
-	);
-
-	test(
-		'Clears the required error once the field is filled',
-		{tag: '@LPD-98309'},
-		async ({promptsPage}) => {
-			await promptsPage.goto();
-			await promptsPage.newPromptButton.click();
-
-			await promptsPage.saveButton.click();
-
-			await expect(promptsPage.nameInput).toHaveAccessibleDescription(
-				/This field is required\./
-			);
-
-			await promptsPage.nameInput.fill(promptName());
-
-			await expect(promptsPage.nameInput).not.toHaveAccessibleDescription(
 				/This field is required\./
 			);
 		}

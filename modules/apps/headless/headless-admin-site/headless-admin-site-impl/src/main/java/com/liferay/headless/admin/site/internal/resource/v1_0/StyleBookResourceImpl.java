@@ -10,18 +10,19 @@ import com.liferay.depot.model.DepotEntry;
 import com.liferay.depot.service.DepotEntryLocalService;
 import com.liferay.document.library.kernel.service.DLAppLocalService;
 import com.liferay.headless.admin.site.dto.v1_0.StyleBook;
+import com.liferay.headless.admin.site.internal.odata.entity.v1_0.StyleBookEntityModel;
+import com.liferay.headless.admin.site.internal.util.EnabledUtil;
 import com.liferay.headless.admin.site.resource.v1_0.StyleBookResource;
 import com.liferay.headless.common.spi.service.context.ServiceContextBuilder;
 import com.liferay.headless.common.spi.util.GroupUtil;
 import com.liferay.layout.page.template.constants.LayoutPageTemplateEntryTypeConstants;
 import com.liferay.layout.page.template.model.LayoutPageTemplateEntry;
 import com.liferay.layout.page.template.service.LayoutPageTemplateEntryService;
-import com.liferay.petra.string.StringPool;
 import com.liferay.portal.kernel.exception.NoSuchLayoutException;
-import com.liferay.portal.kernel.feature.flag.FeatureFlagManagerUtil;
 import com.liferay.portal.kernel.model.Group;
 import com.liferay.portal.kernel.model.Layout;
 import com.liferay.portal.kernel.repository.model.FileEntry;
+import com.liferay.portal.kernel.search.Field;
 import com.liferay.portal.kernel.search.Sort;
 import com.liferay.portal.kernel.search.filter.Filter;
 import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
@@ -33,9 +34,9 @@ import com.liferay.portal.kernel.service.permission.LayoutPermissionUtil;
 import com.liferay.portal.kernel.util.ArrayUtil;
 import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.HashMapBuilder;
-import com.liferay.portal.kernel.util.OrderByComparator;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
+import com.liferay.portal.odata.entity.EntityModel;
 import com.liferay.portal.vulcan.aggregation.Aggregation;
 import com.liferay.portal.vulcan.crud.VulcanCRUDItemDelegate;
 import com.liferay.portal.vulcan.dto.converter.DTOConverter;
@@ -43,17 +44,18 @@ import com.liferay.portal.vulcan.dto.converter.DTOConverterRegistry;
 import com.liferay.portal.vulcan.dto.converter.DefaultDTOConverterContext;
 import com.liferay.portal.vulcan.pagination.Page;
 import com.liferay.portal.vulcan.pagination.Pagination;
+import com.liferay.portal.vulcan.util.SearchUtil;
 import com.liferay.style.book.constants.StyleBookActionKeys;
 import com.liferay.style.book.constants.StyleBookConstants;
 import com.liferay.style.book.model.StyleBookEntry;
+import com.liferay.style.book.service.StyleBookEntryLocalService;
 import com.liferay.style.book.service.StyleBookEntryService;
 import com.liferay.style.book.util.StyleBookEntryProviderUtil;
 import com.liferay.style.book.util.StyleBookUtil;
-import com.liferay.style.book.util.comparator.StyleBookEntryCreateDateComparator;
 import com.liferay.style.book.util.comparator.StyleBookEntryNameComparator;
 
-import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.core.MultivaluedMap;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -86,8 +88,6 @@ public class StyleBookResourceImpl
 			String styleBookExternalReferenceCode)
 		throws Exception {
 
-		_checkFeatureFlag();
-
 		StyleBookEntry styleBookEntry = _getStyleBookEntry(
 			_getDesignLibraryGroupId(designLibraryExternalReferenceCode),
 			styleBookExternalReferenceCode);
@@ -102,13 +102,9 @@ public class StyleBookResourceImpl
 			String styleBookExternalReferenceCode)
 		throws Exception {
 
-		_checkFeatureFlag();
-
-		StyleBookEntry styleBookEntry = _getStyleBookEntry(
-			siteExternalReferenceCode, styleBookExternalReferenceCode);
-
 		_styleBookEntryService.deleteStyleBookEntry(
-			styleBookEntry.getStyleBookEntryId());
+			styleBookExternalReferenceCode,
+			_getStagingAwareGroupId(siteExternalReferenceCode));
 	}
 
 	@Override
@@ -116,8 +112,6 @@ public class StyleBookResourceImpl
 			String designLibraryExternalReferenceCode,
 			String styleBookExternalReferenceCode)
 		throws Exception {
-
-		_checkFeatureFlag();
 
 		return _toStyleBook(
 			_getStyleBookEntry(
@@ -132,40 +126,20 @@ public class StyleBookResourceImpl
 			Sort[] sorts)
 		throws Exception {
 
-		_checkFeatureFlag();
+		return _getStyleBooksPage(
+			Collections.emptyMap(), filter,
+			_getDesignLibraryGroupId(designLibraryExternalReferenceCode),
+			pagination, search, sorts);
+	}
 
-		List<StyleBookEntry> styleBookEntries = null;
-		long totalCount = 0L;
-
-		long groupId = _getDesignLibraryGroupId(
-			designLibraryExternalReferenceCode);
-
-		OrderByComparator<StyleBookEntry> orderByComparator =
-			_getStyleBookEntryOrderByComparator(sorts);
-
-		if (Validator.isNull(search)) {
-			styleBookEntries = _styleBookEntryService.getStyleBookEntries(
-				groupId, pagination.getStartPosition(),
-				pagination.getEndPosition(), orderByComparator);
-			totalCount = _styleBookEntryService.getStyleBookEntriesCount(
-				groupId);
-		}
-		else {
-			styleBookEntries = _styleBookEntryService.getStyleBookEntries(
-				groupId, search, pagination.getStartPosition(),
-				pagination.getEndPosition(), orderByComparator);
-			totalCount = _styleBookEntryService.getStyleBookEntriesCount(
-				groupId, search);
-		}
-
-		return Page.of(
-			transform(styleBookEntries, this::_toStyleBook), pagination,
-			totalCount);
+	@Override
+	public EntityModel getEntityModel(MultivaluedMap multivaluedMap) {
+		return _entityModel;
 	}
 
 	@Override
 	public StyleBook getItem(Long id) throws Exception {
-		_checkFeatureFlag();
+		EnabledUtil.checkDesignLibrariesEnabled(contextCompany);
 
 		return _toStyleBook(_styleBookEntryService.getStyleBookEntry(id));
 	}
@@ -176,8 +150,6 @@ public class StyleBookResourceImpl
 			String pageSpecificationExternalReferenceCode, String search,
 			Pagination pagination)
 		throws Exception {
-
-		_checkFeatureFlag();
 
 		long groupId = GroupUtil.getGroupId(
 			true, contextCompany.getCompanyId(), siteExternalReferenceCode);
@@ -247,11 +219,12 @@ public class StyleBookResourceImpl
 			String styleBookExternalReferenceCode)
 		throws Exception {
 
-		_checkFeatureFlag();
-
 		return _toStyleBook(
 			_getStyleBookEntry(
-				siteExternalReferenceCode, styleBookExternalReferenceCode));
+				GroupUtil.getGroupId(
+					true, contextCompany.getCompanyId(),
+					siteExternalReferenceCode),
+				styleBookExternalReferenceCode));
 	}
 
 	@Override
@@ -261,32 +234,10 @@ public class StyleBookResourceImpl
 			Sort[] sorts)
 		throws Exception {
 
-		_checkFeatureFlag();
+		long groupId = GroupUtil.getGroupId(
+			true, contextCompany.getCompanyId(), siteExternalReferenceCode);
 
-		List<StyleBookEntry> styleBookEntries = null;
-		long totalCount = 0L;
-
-		long groupId = _getGroupId(siteExternalReferenceCode);
-
-		OrderByComparator<StyleBookEntry> orderByComparator =
-			_getStyleBookEntryOrderByComparator(sorts);
-
-		if (Validator.isNull(search)) {
-			styleBookEntries = _styleBookEntryService.getStyleBookEntries(
-				groupId, pagination.getStartPosition(),
-				pagination.getEndPosition(), orderByComparator);
-			totalCount = _styleBookEntryService.getStyleBookEntriesCount(
-				groupId);
-		}
-		else {
-			styleBookEntries = _styleBookEntryService.getStyleBookEntries(
-				groupId, search, pagination.getStartPosition(),
-				pagination.getEndPosition(), orderByComparator);
-			totalCount = _styleBookEntryService.getStyleBookEntriesCount(
-				groupId, search);
-		}
-
-		return Page.of(
+		return _getStyleBooksPage(
 			HashMapBuilder.put(
 				"createBatch",
 				addAction(
@@ -294,16 +245,13 @@ public class StyleBookResourceImpl
 					"postSiteStyleBookBatch", StyleBookConstants.RESOURCE_NAME,
 					groupId)
 			).build(),
-			transform(styleBookEntries, this::_toStyleBook), pagination,
-			totalCount);
+			filter, groupId, pagination, search, sorts);
 	}
 
 	@Override
 	public StyleBook postDesignLibraryStyleBook(
 			String designLibraryExternalReferenceCode, StyleBook styleBook)
 		throws Exception {
-
-		_checkFeatureFlag();
 
 		long groupId = _getDesignLibraryGroupId(
 			designLibraryExternalReferenceCode);
@@ -312,8 +260,9 @@ public class StyleBookResourceImpl
 			_styleBookEntryService.addStyleBookEntry(
 				styleBook.getExternalReferenceCode(), groupId,
 				GetterUtil.getBoolean(styleBook.getDefaultStyleBook()),
-				StringPool.BLANK, styleBook.getFrontendTokensValues(),
-				styleBook.getName(), styleBook.getKey(), styleBook.getThemeId(),
+				styleBook.getFrontendTokenDefinition(),
+				styleBook.getFrontendTokensValues(), styleBook.getName(),
+				styleBook.getKey(), styleBook.getThemeId(),
 				_getServiceContext(groupId));
 
 		long previewFileEntryId = _getPreviewFileEntryId(
@@ -333,16 +282,15 @@ public class StyleBookResourceImpl
 			String siteExternalReferenceCode, StyleBook styleBook)
 		throws Exception {
 
-		_checkFeatureFlag();
-
-		long groupId = _getGroupId(siteExternalReferenceCode);
+		long groupId = _getStagingAwareGroupId(siteExternalReferenceCode);
 
 		StyleBookEntry styleBookEntry =
 			_styleBookEntryService.addStyleBookEntry(
 				styleBook.getExternalReferenceCode(), groupId,
 				GetterUtil.getBoolean(styleBook.getDefaultStyleBook()),
-				StringPool.BLANK, styleBook.getFrontendTokensValues(),
-				styleBook.getName(), styleBook.getKey(), styleBook.getThemeId(),
+				styleBook.getFrontendTokenDefinition(),
+				styleBook.getFrontendTokensValues(), styleBook.getName(),
+				styleBook.getKey(), styleBook.getThemeId(),
 				_getServiceContext(groupId));
 
 		long previewFileEntryId = _getPreviewFileEntryId(
@@ -363,8 +311,6 @@ public class StyleBookResourceImpl
 			String styleBookExternalReferenceCode, StyleBook styleBook)
 		throws Exception {
 
-		_checkFeatureFlag();
-
 		styleBook.setExternalReferenceCode(
 			() -> styleBookExternalReferenceCode);
 
@@ -384,7 +330,7 @@ public class StyleBookResourceImpl
 			_styleBookEntryService.updateStyleBookEntry(
 				styleBookEntry.getStyleBookEntryId(),
 				GetterUtil.getBoolean(styleBook.getDefaultStyleBook()),
-				styleBookEntry.getFrontendTokenDefinition(),
+				styleBook.getFrontendTokenDefinition(),
 				styleBook.getFrontendTokensValues(), styleBook.getName(),
 				styleBook.getKey(),
 				_getPreviewFileEntryId(
@@ -399,41 +345,30 @@ public class StyleBookResourceImpl
 			String styleBookExternalReferenceCode, StyleBook styleBook)
 		throws Exception {
 
-		_checkFeatureFlag();
-
 		styleBook.setExternalReferenceCode(
 			() -> styleBookExternalReferenceCode);
 
+		long groupId = _getStagingAwareGroupId(siteExternalReferenceCode);
+
 		StyleBookEntry styleBookEntry =
 			_styleBookEntryService.fetchStyleBookEntryByExternalReferenceCode(
-				styleBookExternalReferenceCode,
-				_getGroupId(siteExternalReferenceCode));
+				styleBookExternalReferenceCode, groupId);
 
 		if (styleBookEntry == null) {
 			return postSiteStyleBook(siteExternalReferenceCode, styleBook);
 		}
 
-		long groupId = _getGroupId(siteExternalReferenceCode);
-
 		return _toStyleBook(
 			_styleBookEntryService.updateStyleBookEntry(
 				styleBookEntry.getStyleBookEntryId(),
 				GetterUtil.getBoolean(styleBook.getDefaultStyleBook()),
-				styleBookEntry.getFrontendTokenDefinition(),
+				styleBook.getFrontendTokenDefinition(),
 				styleBook.getFrontendTokensValues(), styleBook.getName(),
 				styleBook.getKey(),
 				_getPreviewFileEntryId(
 					groupId,
 					styleBook.getPreviewFileEntryExternalReferenceCode()),
 				styleBook.getThemeId(), _getServiceContext(groupId)));
-	}
-
-	private void _checkFeatureFlag() {
-		if (!FeatureFlagManagerUtil.isEnabled(
-				contextCompany.getCompanyId(), "LPD-57283")) {
-
-			throw new UnsupportedOperationException();
-		}
 	}
 
 	private Map<String, Map<String, String>> _getActions(
@@ -562,6 +497,13 @@ public class StyleBookResourceImpl
 		return serviceContext;
 	}
 
+	private long _getStagingAwareGroupId(String siteExternalReferenceCode)
+		throws Exception {
+
+		return GroupUtil.getStagingAwareGroupId(
+			contextCompany.getCompanyId(), siteExternalReferenceCode);
+	}
+
 	private StyleBookEntry _getStyleBookEntry(
 			long groupId, String styleBookExternalReferenceCode)
 		throws Exception {
@@ -579,42 +521,47 @@ public class StyleBookResourceImpl
 		return styleBookEntry;
 	}
 
-	private StyleBookEntry _getStyleBookEntry(
-			String groupExternalReferenceCode,
-			String styleBookExternalReferenceCode)
+	private Page<StyleBook> _getStyleBooksPage(
+			Map<String, Map<String, String>> actions, Filter filter,
+			long groupId, Pagination pagination, String search, Sort[] sorts)
 		throws Exception {
 
-		return _getStyleBookEntry(
-			_getGroupId(groupExternalReferenceCode),
-			styleBookExternalReferenceCode);
-	}
+		_portletResourcePermission.check(
+			PermissionThreadLocal.getPermissionChecker(), groupId,
+			StyleBookActionKeys.MANAGE_STYLE_BOOK_ENTRIES);
 
-	private OrderByComparator<StyleBookEntry>
-		_getStyleBookEntryOrderByComparator(Sort[] sorts) {
-
-		OrderByComparator<StyleBookEntry> orderByComparator = null;
-
-		if (ArrayUtil.isNotEmpty(sorts)) {
-			Sort sort = sorts[0];
-
-			if (StringUtil.equalsIgnoreCase(sort.getFieldName(), "name")) {
-				orderByComparator = StyleBookEntryNameComparator.getInstance(
-					!sort.isReverse());
-			}
-			else if (StringUtil.equalsIgnoreCase(
-						sort.getFieldName(), "dateCreated")) {
-
-				orderByComparator =
-					StyleBookEntryCreateDateComparator.getInstance(
-						!sort.isReverse());
-			}
-			else {
-				throw new BadRequestException(
-					"Invalid sort field name '" + sort.getFieldName() + "'");
-			}
+		if (ArrayUtil.isEmpty(sorts)) {
+			sorts = new Sort[] {
+				new Sort(
+					Field.getSortableFieldName(Field.CREATE_DATE),
+					Sort.LONG_TYPE, true),
+				new Sort(Field.ENTRY_CLASS_PK, Sort.LONG_TYPE, true)
+			};
 		}
 
-		return orderByComparator;
+		return SearchUtil.search(
+			actions,
+			booleanQuery -> {
+			},
+			filter, StyleBookEntry.class.getName(), search, pagination,
+			queryConfig -> queryConfig.setSelectedFieldNames(
+				Field.ENTRY_CLASS_PK),
+			searchContext -> {
+				searchContext.setCompanyId(contextCompany.getCompanyId());
+				searchContext.setGroupIds(new long[] {groupId});
+			},
+			sorts,
+			document -> {
+				StyleBookEntry styleBookEntry =
+					_styleBookEntryLocalService.fetchStyleBookEntry(
+						GetterUtil.getLong(document.get(Field.ENTRY_CLASS_PK)));
+
+				if (styleBookEntry == null) {
+					return null;
+				}
+
+				return _toStyleBook(styleBookEntry);
+			});
 	}
 
 	private Map<String, String> _resolveActionHref(
@@ -671,6 +618,8 @@ public class StyleBookResourceImpl
 		return _toStyleBook(styleBookEntry.getGroupId(), styleBookEntry);
 	}
 
+	private static final EntityModel _entityModel = new StyleBookEntityModel();
+
 	@Reference
 	private DepotEntryLocalService _depotEntryLocalService;
 
@@ -698,6 +647,9 @@ public class StyleBookResourceImpl
 		target = "(component.name=com.liferay.headless.admin.site.internal.dto.v1_0.converter.StyleBookDTOConverter)"
 	)
 	private DTOConverter<StyleBookEntry, StyleBook> _styleBookDTOConverter;
+
+	@Reference
+	private StyleBookEntryLocalService _styleBookEntryLocalService;
 
 	@Reference
 	private StyleBookEntryService _styleBookEntryService;

@@ -5,23 +5,36 @@
 
 package com.liferay.osb.faro.web.internal.controller.main;
 
+import com.liferay.osb.faro.constants.FaroProjectConstants;
+import com.liferay.osb.faro.engine.client.ContactsEngineClient;
+import com.liferay.osb.faro.model.FaroProject;
+import com.liferay.osb.faro.provisioning.client.ProvisioningClient;
 import com.liferay.osb.faro.provisioning.client.constants.ProductConstants;
 import com.liferay.osb.faro.provisioning.client.internal.ProvisioningClientImpl;
 import com.liferay.osb.faro.provisioning.client.model.OSBAccountEntry;
 import com.liferay.osb.faro.provisioning.client.model.OSBOfferingEntry;
+import com.liferay.osb.faro.service.FaroProjectLocalService;
+import com.liferay.osb.faro.util.FaroPropsValues;
 import com.liferay.osb.faro.web.internal.exception.FaroException;
+import com.liferay.osb.faro.web.internal.exception.FaroValidationException;
 import com.liferay.portal.cache.BasePortalCache;
 import com.liferay.portal.kernel.model.Group;
+import com.liferay.portal.kernel.model.User;
+import com.liferay.portal.kernel.security.permission.PermissionChecker;
+import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.service.GroupLocalService;
+import com.liferay.portal.kernel.test.ReflectionTestUtil;
 import com.liferay.portal.kernel.test.util.RandomTestUtil;
 
 import jakarta.ws.rs.core.Response;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -43,6 +56,12 @@ public class ProjectFaroControllerTest {
 		ReflectionTestUtils.setField(
 			_projectFaroController, "_provisioningClient",
 			new ProvisioningClientImpl());
+	}
+
+	@After
+	public void tearDown() {
+		ReflectionTestUtil.setFieldValue(
+			FaroPropsValues.class, "OSB_FARO_SUBSCRIPTION_PUSH_ENABLED", false);
 	}
 
 	@Test
@@ -97,19 +116,42 @@ public class ProjectFaroControllerTest {
 		OSBAccountEntry osbAccountEntry =
 			_projectFaroController.createOSBAccountEntry(false);
 
-		List<OSBOfferingEntry> offeringEntries =
+		List<OSBOfferingEntry> osbOfferingEntries =
 			osbAccountEntry.getOfferingEntries();
 
 		Assert.assertEquals(
-			offeringEntries.toString(), 1, offeringEntries.size());
+			osbOfferingEntries.toString(), 1, osbOfferingEntries.size());
 
-		OSBOfferingEntry osbOfferingEntry = offeringEntries.get(0);
+		OSBOfferingEntry osbOfferingEntry = osbOfferingEntries.get(0);
 
 		Assert.assertEquals(
 			ProductConstants.PRODUCT_ENTRY_ID_ENTERPRISE,
 			osbOfferingEntry.getProductEntryId());
 		Assert.assertEquals(1, osbOfferingEntry.getQuantity());
 		Assert.assertNotNull(osbOfferingEntry.getStartDate());
+	}
+
+	@Test
+	public void testCreateOSBAccountEntry1WithSubscriptionPushEnabled()
+		throws Exception {
+
+		ReflectionTestUtil.setFieldValue(
+			FaroPropsValues.class, "OSB_FARO_SUBSCRIPTION_PUSH_ENABLED", true);
+
+		OSBAccountEntry osbAccountEntry =
+			_projectFaroController.createOSBAccountEntry(true);
+
+		List<OSBOfferingEntry> osbOfferingEntries =
+			osbAccountEntry.getOfferingEntries();
+
+		Assert.assertEquals(
+			osbOfferingEntries.toString(), 1, osbOfferingEntries.size());
+
+		OSBOfferingEntry osbOfferingEntry = osbOfferingEntries.get(0);
+
+		Assert.assertEquals(
+			ProductConstants.SALESFORCE_PRODUCT_ID_DATA_PLATFORM_PRIVATE_BETA,
+			osbOfferingEntry.getProductEntryId());
 	}
 
 	@Test
@@ -124,6 +166,25 @@ public class ProjectFaroControllerTest {
 			"4-EnterpriseLXCTest",
 			ProductConstants.PRODUCT_ENTRY_ID_LXC_ENTERPRISE);
 		_assert("5-ProLXCTest", ProductConstants.PRODUCT_ENTRY_ID_LXC_PRO);
+	}
+
+	@Test
+	public void testCreateWithSalesforceAccountId() throws Exception {
+		String salesforceAccountId = RandomTestUtil.randomString();
+
+		FaroProject faroProject = _createFaroProject(
+			RandomTestUtil.randomString(), salesforceAccountId);
+
+		_assertSalesforceAccountId(faroProject, salesforceAccountId);
+	}
+
+	@Test
+	public void testCreateWithoutSalesforceAccountId() throws Exception {
+		String salesforceAccountId = RandomTestUtil.randomString();
+
+		FaroProject faroProject = _createFaroProject(salesforceAccountId, null);
+
+		_assertSalesforceAccountId(faroProject, salesforceAccountId);
 	}
 
 	@Test
@@ -238,19 +299,43 @@ public class ProjectFaroControllerTest {
 		);
 	}
 
+	@Test
+	public void testValidateOfferingEntries() {
+		_validateOfferingEntries(ProductConstants.PRODUCT_ENTRY_ID_ENTERPRISE);
+
+		_assertValidateOfferingEntriesFails(
+			ProductConstants.SALESFORCE_PRODUCT_ID_ENTERPRISE);
+	}
+
+	@Test
+	public void testValidateOfferingEntriesWithSubscriptionPushEnabled() {
+		ReflectionTestUtil.setFieldValue(
+			FaroPropsValues.class, "OSB_FARO_SUBSCRIPTION_PUSH_ENABLED", true);
+
+		_validateOfferingEntries(
+			ProductConstants.PRODUCT_ENTRY_ID_DATA_PLATFORM_ENTERPRISE);
+		_validateOfferingEntries(
+			ProductConstants.SALESFORCE_PRODUCT_ID_ENTERPRISE);
+
+		_assertValidateOfferingEntriesFails(
+			ProductConstants.PRODUCT_ENTRY_ID_ENTERPRISE);
+		_assertValidateOfferingEntriesFails(
+			ProductConstants.PRODUCT_ENTRY_ID_ENTERPRISE_CONTACTS);
+	}
+
 	private void _assert(String corpProjectUuid, String productEntryId)
 		throws Exception {
 
 		OSBAccountEntry osbAccountEntry =
 			_projectFaroController.getOSBAccountEntry(corpProjectUuid);
 
-		List<OSBOfferingEntry> offeringEntries =
+		List<OSBOfferingEntry> osbOfferingEntries =
 			osbAccountEntry.getOfferingEntries();
 
 		Assert.assertEquals(
-			offeringEntries.toString(), 1, offeringEntries.size());
+			osbOfferingEntries.toString(), 1, osbOfferingEntries.size());
 
-		OSBOfferingEntry osbOfferingEntry = offeringEntries.get(0);
+		OSBOfferingEntry osbOfferingEntry = osbOfferingEntries.get(0);
 
 		Assert.assertEquals(
 			productEntryId, osbOfferingEntry.getProductEntryId());
@@ -261,6 +346,131 @@ public class ProjectFaroControllerTest {
 			osbOfferingEntry.getStatus());
 	}
 
+	private void _assertSalesforceAccountId(
+			FaroProject faroProject, String salesforceAccountId)
+		throws Exception {
+
+		Mockito.verify(
+			_faroProjectLocalService
+		).addFaroProject(
+			Mockito.anyLong(), Mockito.any(), Mockito.eq(salesforceAccountId),
+			Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+			Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+			Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()
+		);
+
+		Mockito.verify(
+			faroProject
+		).setSalesforceAccountId(
+			salesforceAccountId
+		);
+	}
+
+	private void _assertValidateOfferingEntriesFails(String productEntryId) {
+		try {
+			_validateOfferingEntries(productEntryId);
+
+			Assert.fail();
+		}
+		catch (FaroValidationException faroValidationException) {
+			Response response = faroValidationException.getResponse();
+
+			Assert.assertEquals(
+				Response.Status.BAD_REQUEST.getStatusCode(),
+				response.getStatus());
+		}
+	}
+
+	private FaroProject _createFaroProject(
+			String osbAccountEntrySalesforceAccountId,
+			String salesforceAccountId)
+		throws Exception {
+
+		FaroProject faroProject = Mockito.mock(FaroProject.class);
+
+		PermissionChecker permissionChecker = Mockito.mock(
+			PermissionChecker.class);
+
+		Mockito.when(
+			permissionChecker.getUser()
+		).thenReturn(
+			Mockito.mock(User.class)
+		);
+
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		ProvisioningClient provisioningClient = Mockito.mock(
+			ProvisioningClient.class);
+
+		OSBAccountEntry osbAccountEntry = new OSBAccountEntry();
+
+		osbAccountEntry.setSalesforceAccountId(
+			osbAccountEntrySalesforceAccountId);
+
+		String corpProjectUuid = RandomTestUtil.randomString();
+
+		Mockito.when(
+			provisioningClient.getOSBAccountEntry(corpProjectUuid)
+		).thenReturn(
+			osbAccountEntry
+		);
+
+		ReflectionTestUtils.setField(
+			_projectFaroController, "_provisioningClient", provisioningClient);
+
+		Mockito.when(
+			_faroProjectLocalService.addFaroProject(
+				Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.any(),
+				Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+				Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+				Mockito.any(), Mockito.any(), Mockito.any())
+		).thenReturn(
+			faroProject
+		);
+
+		ReflectionTestUtils.setField(
+			_projectFaroController, "_faroProjectLocalService",
+			_faroProjectLocalService);
+
+		ReflectionTestUtils.setField(
+			_projectFaroController, "contactsEngineClient",
+			Mockito.mock(ContactsEngineClient.class));
+
+		try {
+			ReflectionTestUtils.invokeMethod(
+				_projectFaroController, "_create",
+				RandomTestUtil.randomString(), corpProjectUuid,
+				Collections.emptyList(), null, Collections.emptyList(),
+				RandomTestUtil.randomString(), Collections.emptyList(),
+				salesforceAccountId, RandomTestUtil.randomString(),
+				FaroProjectConstants.STATE_UNCONFIGURED, "UTC");
+		}
+		finally {
+			PermissionThreadLocal.setPermissionChecker(null);
+		}
+
+		Mockito.verify(
+			_faroProjectLocalService
+		).updateFaroProject(
+			faroProject
+		);
+
+		return faroProject;
+	}
+
+	private void _validateOfferingEntries(String productEntryId) {
+		OSBOfferingEntry osbOfferingEntry = new OSBOfferingEntry();
+
+		osbOfferingEntry.setProductEntryId(productEntryId);
+		osbOfferingEntry.setQuantity(1);
+
+		ReflectionTestUtils.invokeMethod(
+			_projectFaroController, "_validateOfferingEntries",
+			Collections.singletonList(osbOfferingEntry));
+	}
+
+	private final FaroProjectLocalService _faroProjectLocalService =
+		Mockito.mock(FaroProjectLocalService.class);
 	private final ProjectFaroController _projectFaroController =
 		new ProjectFaroController();
 

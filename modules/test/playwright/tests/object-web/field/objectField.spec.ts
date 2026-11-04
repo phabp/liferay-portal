@@ -10,7 +10,7 @@ import {
 	ObjectFieldAPI,
 	ObjectRelationshipAPI,
 	ObjectValidationRuleAPI,
-} from '@liferay/object-admin-rest-client-js';
+} from '@liferay/object-admin-rest-client-js/v1_0';
 import {Locator, Page, expect, mergeTests} from '@playwright/test';
 
 import {apiHelpersTest} from '../../../fixtures/apiHelpersTest';
@@ -62,14 +62,8 @@ cmsTest.describe('Manage object field attachment storage locations', () => {
 	cmsTest(
 		'can create field with CMS storage types',
 		async ({apiHelpers, objectFieldsPage, page}) => {
-			const spaceName = `Space ${getRandomString()}`;
-
 			await test.step('Create a new Space', async () => {
-				await apiHelpers.headlessAssetLibrary.createAssetLibrary({
-					name: spaceName,
-					settings: {},
-					type: 'Space',
-				});
+				await apiHelpers.headlessAssetLibrary.createSpace();
 			});
 
 			const objectDefinition =

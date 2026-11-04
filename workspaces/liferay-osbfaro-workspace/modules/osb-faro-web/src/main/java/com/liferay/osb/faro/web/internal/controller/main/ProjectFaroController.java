@@ -10,9 +10,7 @@ import com.liferay.batch.engine.pagination.Pagination;
 import com.liferay.osb.faro.constants.FaroNotificationConstants;
 import com.liferay.osb.faro.constants.FaroProjectConstants;
 import com.liferay.osb.faro.constants.FaroUserConstants;
-import com.liferay.osb.faro.contacts.model.constants.JSONConstants;
-import com.liferay.osb.faro.contacts.service.ContactsCardTemplateLocalService;
-import com.liferay.osb.faro.contacts.service.ContactsLayoutTemplateLocalService;
+import com.liferay.osb.faro.constants.JSONConstants;
 import com.liferay.osb.faro.engine.client.model.ProjectUsageMetric;
 import com.liferay.osb.faro.engine.client.model.Results;
 import com.liferay.osb.faro.engine.client.model.Workspace;
@@ -315,6 +313,7 @@ public class ProjectFaroController extends BaseFaroController {
 			FaroParam
 				<List<OSBOfferingEntry>> offeringEntriesFaroParam,
 			@FormParam("ownerEmailAddress") String ownerEmailAddress,
+			@FormParam("salesforceAccountId") String salesforceAccountId,
 			@FormParam("serverLocation") String serverLocation,
 			@DefaultValue("UTC") @FormParam("timeZoneId") String timeZoneId)
 		throws Exception {
@@ -328,8 +327,9 @@ public class ProjectFaroController extends BaseFaroController {
 				corpProjectName, corpProjectUuid,
 				emailAddressDomainsFaroParam.getValue(), friendlyURL,
 				incidentReportEmailAddressesFaroParam.getValue(), name,
-				offeringEntriesFaroParam.getValue(), serverLocation,
-				FaroProjectConstants.STATE_UNCONFIGURED, timeZoneId);
+				offeringEntriesFaroParam.getValue(), salesforceAccountId,
+				serverLocation, FaroProjectConstants.STATE_UNCONFIGURED,
+				timeZoneId);
 
 			Role role = _roleLocalService.getRole(
 				user.getCompanyId(), RoleConstants.SITE_OWNER);
@@ -472,10 +472,6 @@ public class ProjectFaroController extends BaseFaroController {
 			_faroProjectLocalService.fetchFaroProjectByGroupId(groupId);
 
 		_validateLastSeenDate(faroProject);
-
-		_contactsCardTemplateLocalService.deleteContactsCardTemplates(groupId);
-		_contactsLayoutTemplateLocalService.deleteContactsLayoutTemplates(
-			groupId);
 
 		contactsEngineClient.deleteProject(faroProject, deleteData);
 
@@ -1088,12 +1084,14 @@ public class ProjectFaroController extends BaseFaroController {
 
 				if (trial) {
 					osbOfferingEntry.setProductEntryId(
-						ProductConstants.
-							PRODUCT_ENTRY_ID_DATA_PLATFORM_PRIVATE_BETA);
+						ProductConstants.getProductEntryId(
+							ProductConstants.
+								PRODUCT_ENTRY_NAME_DATA_PLATFORM_PRIVATE_BETA));
 				}
 				else {
 					osbOfferingEntry.setProductEntryId(
-						ProductConstants.PRODUCT_ENTRY_ID_ENTERPRISE);
+						ProductConstants.getProductEntryId(
+							ProductConstants.PRODUCT_ENTRY_NAME_ENTERPRISE));
 				}
 
 				osbOfferingEntry.setQuantity(1);
@@ -1118,8 +1116,9 @@ public class ProjectFaroController extends BaseFaroController {
 					OSBOfferingEntry osbOfferingEntry = new OSBOfferingEntry();
 
 					osbOfferingEntry.setProductEntryId(
-						ProductConstants.
-							PRODUCT_ENTRY_ID_DATA_PLATFORM_PRIVATE_BETA);
+						ProductConstants.getProductEntryId(
+							ProductConstants.
+								PRODUCT_ENTRY_NAME_DATA_PLATFORM_PRIVATE_BETA));
 					osbOfferingEntry.setQuantity(1);
 					osbOfferingEntry.setStartDate(
 						new Date(faroProject.getCreateTime()));
@@ -1188,13 +1187,15 @@ public class ProjectFaroController extends BaseFaroController {
 			String corpProjectName, String corpProjectUuid,
 			List<String> emailAddressDomains, String friendlyURL,
 			List<String> incidentReportEmailAddresses, String name,
-			List<OSBOfferingEntry> offeringEntries, String serverLocation,
-			String state, String timeZoneId)
+			List<OSBOfferingEntry> offeringEntries, String salesforceAccountId,
+			String serverLocation, String state, String timeZoneId)
 		throws Exception {
 
 		_validateFriendlyURL(friendlyURL);
 		_validateIncidentReportEmailAddresses(incidentReportEmailAddresses);
 		_validateTimeZoneId(timeZoneId);
+
+		FaroProject faroProject = null;
 
 		OSBAccountEntry osbAccountEntry = null;
 
@@ -1214,13 +1215,15 @@ public class ProjectFaroController extends BaseFaroController {
 		FaroSubscriptionDisplay faroSubscriptionDisplay =
 			new FaroSubscriptionDisplay(osbAccountEntry);
 
-		User user = getUser();
+		if (Validator.isNull(salesforceAccountId)) {
+			salesforceAccountId = osbAccountEntry.getSalesforceAccountId();
+		}
 
-		FaroProject faroProject = null;
+		User user = getUser();
 
 		try {
 			faroProject = _faroProjectLocalService.addFaroProject(
-				user.getUserId(), name, osbAccountEntry.getDossieraAccountKey(),
+				user.getUserId(), name, salesforceAccountId,
 				osbAccountEntry.getCorpEntryName(), osbAccountEntry.getName(),
 				corpProjectUuid, emailAddressDomains, friendlyURL,
 				JSONUtil.writeValueAsString(incidentReportEmailAddresses),
@@ -1248,6 +1251,8 @@ public class ProjectFaroController extends BaseFaroController {
 			faroProject.setWeDeployKey(
 				FaroPropsValues.FARO_DEFAULT_WE_DEPLOY_KEY);
 		}
+
+		faroProject.setSalesforceAccountId(salesforceAccountId);
 
 		String weDeployKey =
 			contactsEngineClient.addProject(faroProject) + ".lfr.cloud";
@@ -1870,7 +1875,8 @@ public class ProjectFaroController extends BaseFaroController {
 
 		List<OSBAccountEntry> osbAccountEntries =
 			_provisioningClient.getOSBAccountEntries(
-				user.getUserUuid(), ProductConstants.getProductEntryIds());
+				user.getUserUuid(),
+				ProductConstants.getKoroneikiProductEntryIds());
 
 		for (OSBAccountEntry osbAccountEntry : osbAccountEntries) {
 			if (StringUtil.equals(
@@ -1979,13 +1985,6 @@ public class ProjectFaroController extends BaseFaroController {
 
 	private static final CopyOnWriteArraySet<Long> _initializingGroupIds =
 		new CopyOnWriteArraySet<>();
-
-	@Reference
-	private ContactsCardTemplateLocalService _contactsCardTemplateLocalService;
-
-	@Reference
-	private ContactsLayoutTemplateLocalService
-		_contactsLayoutTemplateLocalService;
 
 	@Reference
 	private DataSourceFaroController _dataSourceFaroController;

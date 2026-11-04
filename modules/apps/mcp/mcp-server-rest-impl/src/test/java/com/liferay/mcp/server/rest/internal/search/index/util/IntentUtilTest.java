@@ -32,8 +32,12 @@ public class IntentUtilTest {
 		Assert.assertEquals(
 			SetUtil.fromArray("delete"), IntentUtil.getIntents("delete"));
 		Assert.assertEquals(
+			SetUtil.fromArray("export"), IntentUtil.getIntents("export"));
+		Assert.assertEquals(
 			SetUtil.fromArray("delete"), IntentUtil.getIntents("get rid of"));
 		Assert.assertTrue(SetUtil.isEmpty(IntentUtil.getIntents("hello")));
+		Assert.assertEquals(
+			SetUtil.fromArray("create"), IntentUtil.getIntents("import"));
 		Assert.assertEquals(
 			SetUtil.fromArray(IntentUtil.INTENT_LIST, IntentUtil.INTENT_READ),
 			IntentUtil.getIntents("show"));
@@ -82,6 +86,8 @@ public class IntentUtilTest {
 			IntentUtil.getToolIntent(false, "post", null));
 		Assert.assertEquals(
 			"unpublish", IntentUtil.getToolIntent(false, "post", "Expire"));
+		Assert.assertEquals(
+			"export", IntentUtil.getToolIntent(false, "post", "ExportBatch"));
 		Assert.assertEquals(
 			StringPool.BLANK,
 			IntentUtil.getToolIntent(false, "post", "Unknown"));

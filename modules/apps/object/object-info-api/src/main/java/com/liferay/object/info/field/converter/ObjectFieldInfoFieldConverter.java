@@ -8,6 +8,7 @@ package com.liferay.object.info.field.converter;
 import com.liferay.dynamic.data.mapping.expression.DDMExpressionFactory;
 import com.liferay.info.constants.InfoDisplayWebKeys;
 import com.liferay.info.field.InfoField;
+import com.liferay.info.field.type.DateInfoFieldType;
 import com.liferay.info.field.type.EmailInfoFieldType;
 import com.liferay.info.field.type.FileInfoFieldType;
 import com.liferay.info.field.type.LongTextInfoFieldType;
@@ -63,6 +64,7 @@ import com.liferay.portal.kernel.security.auth.PrincipalThreadLocal;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserLocalService;
+import com.liferay.portal.kernel.theme.ThemeDisplay;
 import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.ListUtil;
 import com.liferay.portal.kernel.util.LocaleUtil;
@@ -184,6 +186,12 @@ public class ObjectFieldInfoFieldConverter {
 				FileInfoFieldType.MAX_FILE_SIZE,
 				_getMaximumFileSize(objectField)
 			);
+		}
+		else if (Objects.equals(
+					objectField.getBusinessType(),
+					ObjectFieldConstants.BUSINESS_TYPE_DATE)) {
+
+			finalStep.attribute(DateInfoFieldType.TIME_ZONE_INDEPENDENT, true);
 		}
 		else if (Objects.equals(
 					objectField.getBusinessType(),
@@ -337,6 +345,24 @@ public class ObjectFieldInfoFieldConverter {
 
 		return _objectDefinitionLocalService.fetchObjectDefinition(
 			objectRelationship.getObjectDefinitionId1());
+	}
+
+	private User _fetchUser(ServiceContext serviceContext) {
+		ThemeDisplay themeDisplay = serviceContext.getThemeDisplay();
+
+		if (themeDisplay == null) {
+			return _userLocalService.fetchUser(serviceContext.getUserId());
+		}
+
+		User user = themeDisplay.getUser();
+
+		if ((user != null) &&
+			(user.getUserId() == serviceContext.getUserId())) {
+
+			return user;
+		}
+
+		return _userLocalService.fetchUser(serviceContext.getUserId());
 	}
 
 	private String _getAcceptedFileExtensions(ObjectField objectField) {
@@ -683,7 +709,7 @@ public class ObjectFieldInfoFieldConverter {
 			return true;
 		}
 
-		User user = _userLocalService.fetchUser(serviceContext.getUserId());
+		User user = _fetchUser(serviceContext);
 
 		if ((user == null) || user.isGuestUser()) {
 			return true;

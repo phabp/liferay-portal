@@ -66,7 +66,8 @@ public class ViewDashboardDisplayContext {
 		RoleLocalService roleLocalService, ThemeDisplay themeDisplay,
 		TranslationInfoItemFieldValuesExporterRegistry
 			translationInfoItemFieldValuesExporterRegistry,
-		FDSItemsActions viewBrokenLinksSectionFDSItemsActions) {
+		FDSItemsActions viewBrokenLinksSectionFDSItemsActions,
+		FDSItemsActions viewMissingRequiredFieldsSectionFDSItemsActions) {
 
 		_analyticsSettingsManager = analyticsSettingsManager;
 		_depotEntryLocalService = depotEntryLocalService;
@@ -81,6 +82,8 @@ public class ViewDashboardDisplayContext {
 			translationInfoItemFieldValuesExporterRegistry;
 		_viewBrokenLinksSectionFDSItemsActions =
 			viewBrokenLinksSectionFDSItemsActions;
+		_viewMissingRequiredFieldsSectionFDSItemsActions =
+			viewMissingRequiredFieldsSectionFDSItemsActions;
 	}
 
 	public Map<String, Object> getConstants() {
@@ -101,7 +104,31 @@ public class ViewDashboardDisplayContext {
 		).put(
 			"admin", () -> _hasUserRole(RoleConstants.ADMINISTRATOR)
 		).put(
-			"administeredSpaceIds", () -> _getAvailableDepotEntryIds()
+			"administeredSpaceGroupIds",
+			() -> TransformUtil.transform(
+				_getAdministeredDepotEntries(),
+				depotEntry -> String.valueOf(depotEntry.getGroupId()))
+		).put(
+			"administeredSpaceIds",
+			() -> TransformUtil.transform(
+				_getAdministeredDepotEntries(),
+				depotEntry -> String.valueOf(depotEntry.getDepotEntryId()))
+		).put(
+			"allSpacesAdministered",
+			() -> {
+				List<DepotEntry> administeredDepotEntries =
+					_getAdministeredDepotEntries();
+
+				if (administeredDepotEntries.size() ==
+						_depotEntryLocalService.getDepotEntriesCount(
+							_themeDisplay.getCompanyId(),
+							DepotConstants.TYPE_SPACE)) {
+
+					return true;
+				}
+
+				return false;
+			}
 		).put(
 			"analyticsEnabled",
 			() -> {
@@ -254,6 +281,11 @@ public class ViewDashboardDisplayContext {
 					_dlConfiguration);
 			}
 		).put(
+			"missingRequiredFieldsFDSActionDropdownItems",
+			() ->
+				_viewMissingRequiredFieldsSectionFDSItemsActions.
+					getFDSActionDropdownItems(_httpServletRequest)
+		).put(
 			"objectDefinitionCssClasses",
 			SectionDisplayContextUtil.getObjectDefinitionCssClasses()
 		).put(
@@ -267,8 +299,14 @@ public class ViewDashboardDisplayContext {
 		).build();
 	}
 
-	private List<String> _getAvailableDepotEntryIds() throws PortalException {
-		return TransformUtil.transform(
+	private List<DepotEntry> _getAdministeredDepotEntries()
+		throws PortalException {
+
+		if (_administeredDepotEntries != null) {
+			return _administeredDepotEntries;
+		}
+
+		_administeredDepotEntries = TransformUtil.transform(
 			_depotEntryService.getDepotEntryGroupIds(
 				_themeDisplay.getCompanyId(), _themeDisplay.getUserId(),
 				DepotConstants.TYPE_SPACE),
@@ -282,11 +320,13 @@ public class ViewDashboardDisplayContext {
 						depotEntry.getGroupId(),
 						ActionKeys.VIEW_SITE_ADMINISTRATION)) {
 
-					return String.valueOf(depotEntry.getDepotEntryId());
+					return depotEntry;
 				}
 
 				return null;
 			});
+
+		return _administeredDepotEntries;
 	}
 
 	private Long _getCMSGroupId() {
@@ -312,6 +352,7 @@ public class ViewDashboardDisplayContext {
 	private static final Log _log = LogFactoryUtil.getLog(
 		ViewDashboardDisplayContext.class);
 
+	private List<DepotEntry> _administeredDepotEntries;
 	private final AnalyticsSettingsManager _analyticsSettingsManager;
 	private final DepotEntryLocalService _depotEntryLocalService;
 	private final DepotEntryService _depotEntryService;
@@ -324,5 +365,7 @@ public class ViewDashboardDisplayContext {
 	private final TranslationInfoItemFieldValuesExporterRegistry
 		_translationInfoItemFieldValuesExporterRegistry;
 	private final FDSItemsActions _viewBrokenLinksSectionFDSItemsActions;
+	private final FDSItemsActions
+		_viewMissingRequiredFieldsSectionFDSItemsActions;
 
 }

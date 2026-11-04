@@ -714,12 +714,6 @@ public class DDMTemplateLocalServiceUtil {
 			groupId, classNameId, templateKey, includeAncestorTemplates);
 	}
 
-	public static DDMTemplate getTemplateBySmallImageId(long smallImageId)
-		throws PortalException {
-
-		return getService().getTemplateBySmallImageId(smallImageId);
-	}
-
 	/**
 	 * Returns all the templates with the class PK.
 	 *
@@ -894,25 +888,6 @@ public class DDMTemplateLocalServiceUtil {
 	}
 
 	/**
-	 * Returns the number of templates matching the group, structure class name
-	 * ID, and status, including Generic Templates.
-	 *
-	 * @param groupId the primary key of the group
-	 * @param structureClassNameId the primary key of the class name for the
-	 template's related structure
-	 * @param status the template's workflow status. For more information see
-	 {@link WorkflowConstants} for constants starting with the
-	 "STATUS_" prefix.
-	 * @return the number of matching templates
-	 */
-	public static int getTemplatesByStructureClassNameIdCount(
-		long groupId, long structureClassNameId, int status) {
-
-		return getService().getTemplatesByStructureClassNameIdCount(
-			groupId, structureClassNameId, status);
-	}
-
-	/**
 	 * Returns the number of templates belonging to the group.
 	 *
 	 * @param groupId the primary key of the group
@@ -948,14 +923,6 @@ public class DDMTemplateLocalServiceUtil {
 		long groupId, long classNameId, long classPK) {
 
 		return getService().getTemplatesCount(groupId, classNameId, classPK);
-	}
-
-	public static int getTemplatesCount(
-		long companyId, long[] groupIds, long[] classNameIds, long[] classPKs,
-		long resourceClassNameId) {
-
-		return getService().getTemplatesCount(
-			companyId, groupIds, classNameIds, classPKs, resourceClassNameId);
 	}
 
 	/**
@@ -1449,4 +1416,4 @@ public class DDMTemplateLocalServiceUtil {
 			DDMTemplateLocalServiceUtil.class, DDMTemplateLocalService.class);
 
 }
-// LIFERAY-SERVICE-BUILDER-HASH:-545185545
+// LIFERAY-SERVICE-BUILDER-HASH:1837165258

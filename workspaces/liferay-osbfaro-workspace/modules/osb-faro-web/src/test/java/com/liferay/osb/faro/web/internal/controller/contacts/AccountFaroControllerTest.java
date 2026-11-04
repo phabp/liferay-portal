@@ -6,6 +6,7 @@
 package com.liferay.osb.faro.web.internal.controller.contacts;
 
 import com.liferay.osb.faro.engine.client.ContactsEngineClient;
+import com.liferay.osb.faro.engine.client.model.Account;
 import com.liferay.osb.faro.engine.client.model.AccountLifecycle;
 import com.liferay.osb.faro.engine.client.model.AccountLifecycleStage;
 import com.liferay.osb.faro.engine.client.model.Individual;
@@ -115,6 +116,50 @@ public class AccountFaroControllerTest {
 	}
 
 	@Test
+	public void testSearch() throws Exception {
+		String accountLifecycleId = RandomTestUtil.randomString();
+		String channelId = RandomTestUtil.randomString();
+		String filterString = RandomTestUtil.randomString();
+		boolean includeAnonymousUsers = RandomTestUtil.randomBoolean();
+		int page = RandomTestUtil.randomInt();
+		int pageSize = RandomTestUtil.randomInt();
+		String rangeEnd = RandomTestUtil.randomString();
+		Integer rangeKey = RandomTestUtil.randomInt();
+		String rangeStart = RandomTestUtil.randomString();
+		String search = RandomTestUtil.randomString();
+		String segmentId = RandomTestUtil.randomString();
+		String sortString = RandomTestUtil.randomString();
+		int total = RandomTestUtil.randomInt();
+
+		Mockito.when(
+			_contactsEngineClient.getAccounts(
+				_faroProject, accountLifecycleId, channelId, filterString,
+				includeAnonymousUsers, search, rangeEnd, rangeKey, rangeStart,
+				segmentId, page, pageSize, sortString)
+		).thenReturn(
+			new Results<>(Collections.emptyList(), total)
+		);
+
+		long groupId = RandomTestUtil.randomLong();
+
+		FaroFDSResultsDisplay<Account> faroFDSResultsDisplay =
+			_accountFaroController.search(
+				groupId, accountLifecycleId, channelId, filterString,
+				includeAnonymousUsers, rangeEnd, rangeKey, rangeStart, search,
+				segmentId, page, pageSize, sortString);
+
+		Assert.assertEquals(total, faroFDSResultsDisplay.getTotalCount());
+
+		Mockito.verify(
+			_contactsEngineClient
+		).getAccounts(
+			_faroProject, accountLifecycleId, channelId, filterString,
+			includeAnonymousUsers, search, rangeEnd, rangeKey, rangeStart,
+			segmentId, page, pageSize, sortString
+		);
+	}
+
+	@Test
 	public void testSearchFDSFieldValuesWithLifecycleStatus() throws Exception {
 		AccountLifecycle accountLifecycle = new AccountLifecycle();
 
@@ -129,11 +174,11 @@ public class AccountFaroControllerTest {
 
 		accountLifecycleStage.setId(id);
 
-		String stageType = RandomTestUtil.randomString();
+		String name = RandomTestUtil.randomString();
 
-		accountLifecycleStage.setStageType(stageType);
+		accountLifecycleStage.setName(name);
 
-		accountLifecycle.setStages(
+		accountLifecycle.setAccountLifecycleStages(
 			Collections.singletonList(accountLifecycleStage));
 
 		String accountLifecycleId = RandomTestUtil.randomString();
@@ -165,7 +210,7 @@ public class AccountFaroControllerTest {
 		Assert.assertEquals(
 			externalReferenceCode, stageMap.get("externalReferenceCode"));
 		Assert.assertEquals(id, stageMap.get("id"));
-		Assert.assertEquals(stageType, stageMap.get("stageType"));
+		Assert.assertEquals(name, stageMap.get("name"));
 	}
 
 	private final AccountFaroController _accountFaroController =

@@ -848,6 +848,10 @@
 			<category name="Bug Prevention" />
 			<description name="Ensure `setExpandoBridgeAttributes` is the final setter called on a model before model persistence." />
 		</check>
+		<check name="JavaFeatureFlagAnnotationCheck">
+			<category name="Bug Prevention" />
+			<description name="Checks that feature flags are declared with `x-feature-flag` in `rest-openapi.yaml` instead of using the annotation `@FeatureFlag`." />
+		</check>
 		<check name="JavaFeatureFlagManagerUtilCheck">
 			<category name="Bug Prevention" />
 			<description name="Finds cases where `FeatureFlagManagerUtil.isEnabled` should be used and incorrect use of it." />
@@ -1908,9 +1912,25 @@
 		</check>
 	</source-processor>
 	<source-processor name="TFSourceProcessor">
+		<check name="EmbeddedJSONCheck">
+			<category name="Styling" />
+			<description name="Ensures consistent formatting for embedded JSON." />
+		</check>
 		<check name="TFBlockOrderCheck">
 			<category name="Styling" />
-			<description name="Checks the order of blocks in `.tf` file." />
+			<description name="Checks the order of blocks and attributes in `.hcl` and `.tf` files." />
+		</check>
+		<check name="TFEmptyLinesCheck">
+			<category name="Styling" />
+			<description name="Finds missing and unnecessary empty lines." />
+		</check>
+		<check name="TFIndentationCheck">
+			<category name="Styling" />
+			<description name="Finds incorrect indentation in `.hcl` and `.tf` files." />
+		</check>
+		<check name="TFStylingCheck">
+			<category name="Styling" />
+			<description name="Applies rules to enforce consistency in code style." />
 		</check>
 	</source-processor>
 	<source-processor name="TLDSourceProcessor">

@@ -36,6 +36,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 
 		_jobURL = JenkinsResultsParserUtil.combine(
 			_jenkinsMaster.getURL(), "/job/", _jobName);
+		_remoteJobURL = getRemoteJobURL(_jenkinsMaster, _jobName);
 
 		_thresholds = monitorConfig.getThresholds();
 
@@ -58,14 +59,14 @@ public class ControllerResultMonitor extends BaseMonitor {
 		catch (Exception exception) {
 			return new MonitorResult(
 				JenkinsResultsParserUtil.combine(
-					"Unable to read ", _jobURL, ": ",
+					"Unable to read ", _remoteJobURL, ": ",
 					JenkinsResultsParserUtil.getMessage(exception)),
 				null, MonitorResult.Status.CRITICAL, currentTimeMillis);
 		}
 
 		if (buildsJSONArray == null) {
 			return new MonitorResult(
-				"Unable to read " + _jobURL, null,
+				"Unable to read " + _remoteJobURL, null,
 				MonitorResult.Status.CRITICAL, currentTimeMillis);
 		}
 
@@ -101,10 +102,18 @@ public class ControllerResultMonitor extends BaseMonitor {
 
 		metrics.put("skipped.builds.count", String.valueOf(skippedBuildsCount));
 
+		List<String> linkURLs = null;
+
 		if (resultBuildJSONObject != null) {
+			int statusesCount = statuses.size();
+
 			_checkResultBuild(
 				resultBuildJSONObject, currentTimeMillis, messages, metrics,
 				statuses);
+
+			if (statuses.size() > statusesCount) {
+				linkURLs = getConfiguredLinkURLs();
+			}
 		}
 		else {
 			messages.add(
@@ -114,16 +123,21 @@ public class ControllerResultMonitor extends BaseMonitor {
 					JenkinsResultsParserUtil.getNounForm(
 						buildsJSONArray.length(), "builds", "build")));
 
-			statuses.add(MonitorResult.Status.UNKNOWN);
+			statuses.add(MonitorResult.Status.WARN);
 		}
 
 		return _newMonitorResult(
-			currentTimeMillis, messages, metrics, statuses);
+			currentTimeMillis, linkURLs, messages, metrics, statuses);
 	}
 
 	@Override
 	public void prepareCycle() {
 		MasterResourceReader.clearInstances();
+	}
+
+	@Override
+	protected String getDefaultLinkURL() {
+		return _remoteJobURL;
 	}
 
 	@Override
@@ -139,9 +153,9 @@ public class ControllerResultMonitor extends BaseMonitor {
 			messages.add(
 				JenkinsResultsParserUtil.combine(
 					"Unable to determine the downstream build of job ",
-					_jobName, " build ", String.valueOf(number)));
+					_getRemoteBuildURL(number)));
 
-			statuses.add(MonitorResult.Status.UNKNOWN);
+			statuses.add(MonitorResult.Status.WARN);
 
 			return;
 		}
@@ -160,9 +174,12 @@ public class ControllerResultMonitor extends BaseMonitor {
 		}
 
 		if (buildJSONObject == null) {
-			messages.add("Unable to read " + buildURL);
+			messages.add(
+				JenkinsResultsParserUtil.combine(
+					"Job ", _getRemoteBuildURL(number), " invoked ", buildURL,
+					", which could not be read"));
 
-			statuses.add(MonitorResult.Status.UNKNOWN);
+			statuses.add(MonitorResult.Status.CRITICAL);
 
 			return;
 		}
@@ -175,7 +192,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 			if (ageSeconds > _pendingMaximumSeconds) {
 				messages.add(
 					JenkinsResultsParserUtil.combine(
-						"Job ", _jobName, " build ", String.valueOf(number),
+						"Job ", _getRemoteBuildURL(number),
 						" has been in progress for ",
 						JenkinsResultsParserUtil.toDurationString(
 							ageSeconds * 1000),
@@ -189,8 +206,8 @@ public class ControllerResultMonitor extends BaseMonitor {
 
 		messages.add(
 			JenkinsResultsParserUtil.combine(
-				"Job ", _jobName, " build ", String.valueOf(number),
-				" invoked ", buildURL, ", which finished with the result ",
+				"Job ", _getRemoteBuildURL(number), " invoked ", buildURL,
+				", which finished with the result ",
 				buildJSONObject.optString("result"),
 				" without reporting back"));
 
@@ -217,7 +234,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 
 			messages.add(
 				JenkinsResultsParserUtil.combine(
-					"Job ", _jobName, " build ", String.valueOf(number),
+					"Job ", _getRemoteBuildURL(number),
 					" completed with the result ", result,
 					" without invoking a downstream build"));
 
@@ -245,7 +262,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 			if (ageSeconds > _pendingMaximumSeconds) {
 				messages.add(
 					JenkinsResultsParserUtil.combine(
-						"Job ", _jobName, " build ", String.valueOf(number),
+						"Job ", _getRemoteBuildURL(number),
 						" invoked its downstream build ",
 						JenkinsResultsParserUtil.toDurationString(
 							ageSeconds * 1000),
@@ -269,14 +286,13 @@ public class ControllerResultMonitor extends BaseMonitor {
 		if (buildURL == null) {
 			messages.add(
 				JenkinsResultsParserUtil.combine(
-					"Job ", _jobName, " build ", String.valueOf(number),
-					" reported ", status));
+					"Job ", _getRemoteBuildURL(number), " reported ", status));
 		}
 		else {
 			messages.add(
 				JenkinsResultsParserUtil.combine(
-					"Job ", _jobName, " build ", String.valueOf(number),
-					" reported ", status, " for ", buildURL));
+					"Job ", _getRemoteBuildURL(number), " reported ", status,
+					" for ", buildURL));
 		}
 
 		statuses.add(MonitorResult.Status.CRITICAL);
@@ -295,7 +311,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 					"Unable to determine the last build timestamp for job ",
 					_jobName));
 
-			statuses.add(MonitorResult.Status.UNKNOWN);
+			statuses.add(MonitorResult.Status.WARN);
 
 			return;
 		}
@@ -311,13 +327,24 @@ public class ControllerResultMonitor extends BaseMonitor {
 		try {
 			cronSchedule = getCronSchedule(_jobName, _jenkinsMaster.getName());
 		}
+		catch (IllegalArgumentException illegalArgumentException) {
+			messages.add(
+				JenkinsResultsParserUtil.combine(
+					"Job ", _jobName, " has an invalid schedule: ",
+					JenkinsResultsParserUtil.getMessage(
+						illegalArgumentException)));
+
+			statuses.add(MonitorResult.Status.WARN);
+
+			return;
+		}
 		catch (Exception exception) {
 			messages.add(
 				JenkinsResultsParserUtil.combine(
 					"Unable to read the schedule for job ", _jobName, ": ",
 					JenkinsResultsParserUtil.getMessage(exception)));
 
-			statuses.add(MonitorResult.Status.UNKNOWN);
+			statuses.add(MonitorResult.Status.CRITICAL);
 
 			return;
 		}
@@ -328,7 +355,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 					"Job ", _jobName, " has no schedule, so it is not ",
 					"checked for being on time"));
 
-			statuses.add(MonitorResult.Status.UNKNOWN);
+			statuses.add(MonitorResult.Status.WARN);
 
 			return;
 		}
@@ -345,7 +372,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 					"Job ", _jobName, " has an invalid schedule: ",
 					cronSchedule.getSpec()));
 
-			statuses.add(MonitorResult.Status.UNKNOWN);
+			statuses.add(MonitorResult.Status.WARN);
 
 			return;
 		}
@@ -391,6 +418,11 @@ public class ControllerResultMonitor extends BaseMonitor {
 		return jobJSONObject.optJSONArray("builds");
 	}
 
+	private String _getRemoteBuildURL(int number) {
+		return JenkinsResultsParserUtil.combine(
+			_remoteJobURL, "/", String.valueOf(number));
+	}
+
 	private String _getStatus(String description) {
 		Matcher matcher = _statusPattern.matcher(description);
 
@@ -424,7 +456,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 	}
 
 	private MonitorResult _newMonitorResult(
-		long currentTimeMillis, List<String> messages,
+		long currentTimeMillis, List<String> linkURLs, List<String> messages,
 		Map<String, String> metrics, List<MonitorResult.Status> statuses) {
 
 		if (statuses.isEmpty()) {
@@ -434,7 +466,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 		}
 
 		return new MonitorResult(
-			JenkinsResultsParserUtil.join(". ", messages), metrics,
+			linkURLs, JenkinsResultsParserUtil.join(". ", messages), metrics,
 			MonitorResult.Status.getMostSevere(statuses), currentTimeMillis);
 	}
 
@@ -452,6 +484,7 @@ public class ControllerResultMonitor extends BaseMonitor {
 	private final String _jobName;
 	private final String _jobURL;
 	private final long _pendingMaximumSeconds;
+	private final String _remoteJobURL;
 	private final Map<String, String> _thresholds;
 
 }

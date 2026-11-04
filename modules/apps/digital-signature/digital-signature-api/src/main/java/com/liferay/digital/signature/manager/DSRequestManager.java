@@ -6,7 +6,12 @@
 package com.liferay.digital.signature.manager;
 
 import com.liferay.digital.signature.model.DSEnvelope;
+import com.liferay.digital.signature.model.DSRequest;
 import com.liferay.portal.kernel.exception.PortalException;
+import com.liferay.portal.kernel.security.permission.PermissionChecker;
+
+import java.util.List;
+import java.util.Map;
 
 import org.osgi.annotation.versioning.ProviderType;
 
@@ -16,11 +21,39 @@ import org.osgi.annotation.versioning.ProviderType;
 @ProviderType
 public interface DSRequestManager {
 
-	public void addDSRequest(
-			long companyId, long groupId, long userId, DSEnvelope dsEnvelope,
-			long[] fileEntryIds)
+	public DSRequest addDSRequest(
+			long companyId, DSEnvelope dsEnvelope, long[] fileEntryIds,
+			long groupId, long userId)
+		throws PortalException;
+
+	public DSRequest fetchDSRequest(long companyId, long dsRequestId);
+
+	public DSRequest fetchLatestFileEntryDSRequest(
+		long companyId, long fileEntryId);
+
+	public List<DSRequest> getFileEntryDSRequests(
+		long companyId, long fileEntryId);
+
+	public List<DSRequest> getGroupDSRequests(
+		long companyId, long groupId, String search, int start, int end);
+
+	public int getGroupDSRequestsCount(
+		long companyId, long groupId, String search);
+
+	public Map<Long, DSRequest> getLatestFileEntryDSRequests(
+		long companyId, long[] fileEntryIds);
+
+	public boolean hasPermission(
+			PermissionChecker permissionChecker, DSRequest dsRequest,
+			String actionId)
+		throws PortalException;
+
+	public void sendDSRequestNotifications(long dsRequestId)
 		throws PortalException;
 
 	public void updateDSRequest(long dsRequestId) throws PortalException;
+
+	public void voidDSRequest(long dsRequestId, String voidedReason)
+		throws PortalException;
 
 }

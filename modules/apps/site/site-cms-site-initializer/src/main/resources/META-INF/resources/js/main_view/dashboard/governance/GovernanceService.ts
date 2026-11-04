@@ -20,11 +20,11 @@ type ContentAgeRange = {
 export type AssetStatistics = {
 	approvedCount: number;
 	brokenLinksCount: number;
-	duplicatedCount?: number;
 	expiredCount: number;
 	expiringSoonCount: number;
 	inDraftCount: number;
 	longStandingDraftsCount: number;
+	missingRequiredFieldsCount: number;
 	overdueWorkflowTasksCount: number;
 	pendingCount: number;
 	reviewDateOverdueCount: number;
@@ -111,36 +111,18 @@ async function getAssetStatistics(
 ) {
 	const scope = assetLibraryId ? `assetLibraryId=${assetLibraryId}&` : '';
 
-	const [statistics, similarityClusters] = await Promise.all([
-		ApiHelper.get<AssetStatistics>(
-			`/o/headless-cms/v1.0/asset-statistics?${scope}`,
-			signal
-		),
-		ApiHelper.get<{totalCount: number}>(
-			`/o/headless-cms/v1.0/similarity-clusters?${scope}pageSize=1`,
-			signal
-		),
-	]);
-
-	if (!statistics.data) {
-		return statistics;
-	}
-
-	return {
-		...statistics,
-		data: {
-			...statistics.data,
-			duplicatedCount: similarityClusters.data?.totalCount,
-		},
-	};
+	return ApiHelper.get<AssetStatistics>(
+		`/o/headless-cms/v1.0/asset-statistics?${scope}`,
+		signal
+	);
 }
 
 async function getContributors(
 	filter: string,
-	groupId?: number
+	groupIds: number[]
 ): Promise<RequestResult<Contributors>> {
 	const searchParams = new URLSearchParams({
-		filter: getScopedFilter(filter, groupId),
+		filter: getScopedFilter(filter, groupIds),
 		pageSize: '1',
 	});
 
@@ -219,12 +201,12 @@ function getContentAgeSearchRanges(now: Date) {
 async function getContentAgeDistribution(
 	filter: string,
 	dateField: ContentAgeDateField,
-	groupId?: number
+	groupIds: number[]
 ): Promise<RequestResult<number[]>> {
 	const searchParams = new URLSearchParams({
 		filter: getScopedFilter(
 			`${filter} and status eq ${WORKFLOW_STATUS.APPROVED}`,
-			groupId
+			groupIds
 		),
 		pageSize: '1',
 	});
@@ -265,10 +247,10 @@ async function getContentAgeDistribution(
 
 function getContentProgress(
 	filter: string,
-	groupId?: number,
+	groupIds: number[],
 	createdInLastDays?: number
 ) {
-	let scopedFilter = getScopedFilter(filter, groupId);
+	let scopedFilter = getScopedFilter(filter, groupIds);
 
 	if (createdInLastDays) {
 		const createdSince = new Date(
@@ -299,12 +281,20 @@ function getContentProgress(
 	});
 }
 
-function getScopedFilter(filter: string, groupId?: number) {
-	if (!Number(groupId)) {
+function getScopedFilter(filter: string, groupIds: number[]) {
+	if (!groupIds.length) {
 		return filter;
 	}
 
-	return `${filter} and groupIds/any(g:g eq ${Number(groupId)})`;
+	const groupFilter = groupIds
+		.map((groupId) => `groupIds/any(g:g eq ${groupId})`)
+		.join(' or ');
+
+	if (groupIds.length === 1) {
+		return `${filter} and ${groupFilter}`;
+	}
+
+	return `${filter} and (${groupFilter})`;
 }
 
 function getLongStandingDraftsThresholdDate() {
@@ -313,10 +303,10 @@ function getLongStandingDraftsThresholdDate() {
 	);
 }
 
-function getAssetListURL(filter: string, sort: string, groupId?: number) {
+function getAssetListURL(filter: string, sort: string, groupIds: number[]) {
 	const searchParams = new URLSearchParams({
 		emptySearch: 'true',
-		filter: getScopedFilter(filter, groupId),
+		filter: getScopedFilter(filter, groupIds),
 		nestedFields: NESTED_FIELDS,
 		pageSize: String(GOVERNANCE_ASSET_LIST_PAGE_SIZE),
 		sort,
@@ -336,7 +326,7 @@ function getAssetsByIdsURL(ids: number[]) {
 	return `${SEARCH_URL}?${searchParams}`;
 }
 
-function getBrokenLinkAssetsURL(assetLibraryId?: string) {
+function getQualityAssetsURL(path: string, assetLibraryId?: string) {
 	const searchParams = new URLSearchParams({
 		pageSize: String(GOVERNANCE_ASSET_LIST_PAGE_SIZE),
 		sort: 'title:asc',
@@ -346,7 +336,18 @@ function getBrokenLinkAssetsURL(assetLibraryId?: string) {
 		searchParams.set('assetLibraryId', assetLibraryId);
 	}
 
-	return `/o/headless-cms/v1.0/broken-link-assets?${searchParams}`;
+	return `/o/headless-cms/v1.0/${path}?${searchParams}`;
+}
+
+function getBrokenLinkAssetsURL(assetLibraryId?: string) {
+	return getQualityAssetsURL('broken-link-assets', assetLibraryId);
+}
+
+function getMissingRequiredFieldsAssetsURL(assetLibraryId?: string) {
+	return getQualityAssetsURL(
+		'missing-required-fields-assets',
+		assetLibraryId
+	);
 }
 
 function getDateInDays(days: number) {
@@ -356,18 +357,18 @@ function getDateInDays(days: number) {
 function getFreshnessListURL(
 	type: FreshnessListType,
 	filter: string,
-	groupId?: number
+	groupIds: number[]
 ) {
 	const {filter: typeFilter, sort} = FRESHNESS_LIST_QUERIES[type]();
 
-	return getAssetListURL(`${filter} and ${typeFilter}`, sort, groupId);
+	return getAssetListURL(`${filter} and ${typeFilter}`, sort, groupIds);
 }
 
-function getLongStandingDraftsURL(filter: string, groupId?: number) {
+function getLongStandingDraftsURL(filter: string, groupIds: number[]) {
 	return getAssetListURL(
 		`${filter} and status eq ${WORKFLOW_STATUS.DRAFT} and dateModified lt ${getLongStandingDraftsThresholdDate().toISOString()}`,
 		'dateModified:asc',
-		groupId
+		groupIds
 	);
 }
 
@@ -381,4 +382,5 @@ export default {
 	getFreshnessListURL,
 	getLongStandingDraftsThresholdDate,
 	getLongStandingDraftsURL,
+	getMissingRequiredFieldsAssetsURL,
 };

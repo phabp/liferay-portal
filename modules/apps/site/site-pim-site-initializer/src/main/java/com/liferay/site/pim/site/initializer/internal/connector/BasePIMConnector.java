@@ -18,7 +18,6 @@ import com.liferay.portal.kernel.dao.orm.QueryUtil;
 import com.liferay.portal.kernel.language.Language;
 import com.liferay.portal.kernel.search.Field;
 import com.liferay.portal.kernel.util.GetterUtil;
-import com.liferay.portal.kernel.util.ListUtil;
 import com.liferay.portal.kernel.util.MapUtil;
 import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
@@ -31,7 +30,6 @@ import com.liferay.portal.search.searcher.Searcher;
 import com.liferay.portal.search.sort.SortOrder;
 import com.liferay.portal.search.sort.Sorts;
 import com.liferay.site.pim.site.initializer.connector.PIMConnector;
-import com.liferay.site.pim.site.initializer.connector.PIMConnectorChannelField;
 import com.liferay.site.pim.site.initializer.constants.PIMObjectDefinitionConstants;
 import com.liferay.site.pim.site.initializer.exception.PIMConnectorException;
 import com.liferay.site.pim.site.initializer.internal.link.VariantPIMLinkType;
@@ -63,20 +61,26 @@ public abstract class BasePIMConnector implements PIMConnector {
 			ObjectEntry pimConnectorObjectEntry)
 		throws Exception {
 
+		List<ObjectEntry> pimFieldMappingObjectEntries =
+			PIMConnectorFieldMappingsUtil.getObjectEntries(
+				pimConnectorObjectEntry);
+
+		if (!PIMConnectorFieldMappingsUtil.isMappingComplete(
+				pimFieldMappingObjectEntries, this)) {
+
+			throw new PIMConnectorException(
+				"a-required-channel-field-is-not-mapped");
+		}
+
 		Map<String, List<ObjectEntry>> objectEntriesMap = new HashMap<>();
 
-		for (ObjectEntry objectEntry :
-				PIMConnectorFieldMappingsUtil.getObjectEntries(
-					pimConnectorObjectEntry)) {
-
+		for (ObjectEntry objectEntry : pimFieldMappingObjectEntries) {
 			List<ObjectEntry> objectEntries = objectEntriesMap.computeIfAbsent(
 				MapUtil.getString(objectEntry.getValues(), "channelFieldName"),
 				key -> new ArrayList<>());
 
 			objectEntries.add(objectEntry);
 		}
-
-		_validate(objectEntriesMap);
 
 		return objectEntriesMap;
 	}
@@ -87,35 +91,43 @@ public abstract class BasePIMConnector implements PIMConnector {
 
 		Map<String, List<ObjectEntry>> objectEntriesMap = new LinkedHashMap<>();
 
-		Map<Long, Map<String, String>> clusterKeysMap = new HashMap<>();
 		ObjectDefinition objectDefinition =
 			objectDefinitionLocalService.
 				fetchObjectDefinitionByExternalReferenceCode(
 					PIMObjectDefinitionConstants.EXTERNAL_REFERENCE_CODE_LINK,
 					companyId);
+		Map<Long, Map<String, Map<String, Serializable>>> valuesMaps =
+			new HashMap<>();
 
 		for (ObjectEntry objectEntry : _getPIMProductObjectEntries(companyId)) {
 			long groupId = objectEntry.getGroupId();
 
-			Map<String, String> clusterKeys = clusterKeysMap.get(groupId);
+			Map<String, Map<String, Serializable>> valuesMap = valuesMaps.get(
+				groupId);
 
-			if (clusterKeys == null) {
-				clusterKeys = _getVariantPIMLinkClusterKeys(
+			if (valuesMap == null) {
+				valuesMap = _getVariantPIMLinkValuesMap(
 					companyId, groupId, objectDefinition);
 
-				clusterKeysMap.put(groupId, clusterKeys);
+				valuesMaps.put(groupId, valuesMap);
 			}
 
 			String externalReferenceCode =
 				objectEntry.getExternalReferenceCode();
 
+			Map<String, Serializable> values = valuesMap.getOrDefault(
+				externalReferenceCode, Collections.emptyMap());
+
 			List<ObjectEntry> objectEntries = objectEntriesMap.computeIfAbsent(
-				GetterUtil.getString(
-					clusterKeys.get(externalReferenceCode),
-					externalReferenceCode),
+				MapUtil.getString(values, "clusterKey", externalReferenceCode),
 				key -> new ArrayList<>());
 
-			objectEntries.add(objectEntry);
+			if (MapUtil.getBoolean(values, "primary")) {
+				objectEntries.add(0, objectEntry);
+			}
+			else {
+				objectEntries.add(objectEntry);
+			}
 		}
 
 		return objectEntriesMap;
@@ -179,14 +191,14 @@ public abstract class BasePIMConnector implements PIMConnector {
 		return objectEntries;
 	}
 
-	private Map<String, String> _getVariantPIMLinkClusterKeys(
+	private Map<String, Map<String, Serializable>> _getVariantPIMLinkValuesMap(
 			long companyId, long groupId, ObjectDefinition objectDefinition)
 		throws Exception {
 
-		Map<String, String> clusterKeys = new HashMap<>();
+		Map<String, Map<String, Serializable>> valuesMap = new HashMap<>();
 
 		if (objectDefinition == null) {
-			return clusterKeys;
+			return valuesMap;
 		}
 
 		for (Map<String, Serializable> values :
@@ -199,18 +211,16 @@ public abstract class BasePIMConnector implements PIMConnector {
 						objectDefinition),
 					null, QueryUtil.ALL_POS, QueryUtil.ALL_POS, null)) {
 
-			String clusterKey = MapUtil.getString(values, "clusterKey");
-
-			if (Validator.isNull(clusterKey)) {
+			if (Validator.isNull(MapUtil.getString(values, "clusterKey"))) {
 				continue;
 			}
 
-			clusterKeys.put(
+			valuesMap.put(
 				MapUtil.getString(values, "sourceClassExternalReferenceCode"),
-				clusterKey);
+				values);
 		}
 
-		return clusterKeys;
+		return valuesMap;
 	}
 
 	private List<Document> _search(long companyId, long entryClassPK) {
@@ -251,36 +261,6 @@ public abstract class BasePIMConnector implements PIMConnector {
 			).build());
 
 		return searchResponse.getDocuments();
-	}
-
-	private void _validate(Map<String, List<ObjectEntry>> objectEntriesMap)
-		throws Exception {
-
-		for (PIMConnectorChannelField pimConnectorChannelField :
-				getPIMConnectorChannelFields()) {
-
-			if (!pimConnectorChannelField.isRequired()) {
-				continue;
-			}
-
-			List<ObjectEntry> objectEntries = ListUtil.filter(
-				objectEntriesMap.getOrDefault(
-					pimConnectorChannelField.getName(),
-					Collections.emptyList()),
-				objectEntry -> {
-					Map<String, Serializable> values = objectEntry.getValues();
-
-					return Validator.isNotNull(
-						MapUtil.getString(values, "sourceFieldName")) ||
-						   Validator.isNotNull(
-							   MapUtil.getString(values, "value"));
-				});
-
-			if (objectEntries.isEmpty()) {
-				throw new PIMConnectorException(
-					"a-required-channel-field-is-not-mapped");
-			}
-		}
 	}
 
 	private static final int _SEARCH_SIZE = 1000;
