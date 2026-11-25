@@ -5,13 +5,18 @@
 
 package com.liferay.dynamic.data.mapping.form.field.type.internal.search.location;
 
+import com.liferay.dynamic.data.mapping.constants.DDMActionKeys;
 import com.liferay.dynamic.data.mapping.form.field.type.DDMFormFieldTemplateContextContributor;
 import com.liferay.dynamic.data.mapping.form.field.type.constants.DDMFormFieldTypeConstants;
 import com.liferay.dynamic.data.mapping.form.field.type.internal.util.DDMFormFieldTypeUtil;
 import com.liferay.dynamic.data.mapping.model.DDMFormField;
+import com.liferay.dynamic.data.mapping.model.DDMFormInstance;
+import com.liferay.dynamic.data.mapping.model.DDMFormInstanceSettings;
 import com.liferay.dynamic.data.mapping.model.LocalizedValue;
 import com.liferay.dynamic.data.mapping.render.DDMFormFieldRenderingContext;
+import com.liferay.dynamic.data.mapping.service.DDMFormInstanceLocalService;
 import com.liferay.google.places.util.GooglePlacesUtil;
+import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.json.JSONException;
 import com.liferay.portal.kernel.json.JSONFactory;
 import com.liferay.portal.kernel.json.JSONObject;
@@ -19,7 +24,12 @@ import com.liferay.portal.kernel.json.JSONUtil;
 import com.liferay.portal.kernel.language.Language;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
+import com.liferay.portal.kernel.model.Group;
+import com.liferay.portal.kernel.security.permission.ActionKeys;
+import com.liferay.portal.kernel.security.permission.PermissionChecker;
+import com.liferay.portal.kernel.security.permission.resource.ModelResourcePermission;
 import com.liferay.portal.kernel.service.GroupLocalService;
+import com.liferay.portal.kernel.service.permission.GroupPermissionUtil;
 import com.liferay.portal.kernel.theme.ThemeDisplay;
 import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.HashMapBuilder;
@@ -101,9 +111,42 @@ public class SearchLocationDDMFormFieldTemplateContextContributor
 			companyId,
 			GooglePlacesUtil.getGooglePlacesAPIKey(
 				companyId,
-				GetterUtil.getLong(
-					ddmFormFieldRenderingContext.getProperty("groupId")),
+				_getGroupId(
+					companyId, ddmFormFieldRenderingContext,
+					themeDisplay.getPermissionChecker()),
 				_groupLocalService));
+	}
+
+	private long _getGroupId(
+		long companyId,
+		DDMFormFieldRenderingContext ddmFormFieldRenderingContext,
+		PermissionChecker permissionChecker) {
+
+		Group group = _groupLocalService.fetchGroup(
+			GetterUtil.getLong(
+				ddmFormFieldRenderingContext.getProperty("groupId")));
+
+		if ((group == null) || (group.getCompanyId() != companyId)) {
+			return 0;
+		}
+
+		try {
+			if (GroupPermissionUtil.contains(
+					permissionChecker, group, ActionKeys.VIEW) ||
+				_hasFormInstancePermission(
+					ddmFormFieldRenderingContext.getDDMFormInstanceId(),
+					group.getGroupId(), permissionChecker)) {
+
+				return group.getGroupId();
+			}
+		}
+		catch (PortalException portalException) {
+			if (_log.isWarnEnabled()) {
+				_log.warn(portalException);
+			}
+		}
+
+		return 0;
 	}
 
 	private JSONObject _getLabelsJSONObject(
@@ -145,8 +188,52 @@ public class SearchLocationDDMFormFieldTemplateContextContributor
 		return new String[0];
 	}
 
+	private boolean _hasFormInstancePermission(
+			long ddmFormInstanceId, long groupId,
+			PermissionChecker permissionChecker)
+		throws PortalException {
+
+		DDMFormInstance ddmFormInstance =
+			_ddmFormInstanceLocalService.fetchFormInstance(ddmFormInstanceId);
+
+		if ((ddmFormInstance == null) ||
+			(ddmFormInstance.getGroupId() != groupId)) {
+
+			return false;
+		}
+
+		DDMFormInstanceSettings ddmFormInstanceSettings =
+			ddmFormInstance.getSettingsModel();
+
+		if (!ddmFormInstanceSettings.published() ||
+			(ddmFormInstanceSettings.requireAuthentication() &&
+			 !permissionChecker.isSignedIn())) {
+
+			return false;
+		}
+
+		if (_ddmFormInstanceModelResourcePermission.contains(
+				permissionChecker, ddmFormInstance,
+				DDMActionKeys.ADD_FORM_INSTANCE_RECORD)) {
+
+			return true;
+		}
+
+		return _ddmFormInstanceModelResourcePermission.contains(
+			permissionChecker, ddmFormInstance, ActionKeys.VIEW);
+	}
+
 	private static final Log _log = LogFactoryUtil.getLog(
 		SearchLocationDDMFormFieldTemplateContextContributor.class);
+
+	@Reference
+	private DDMFormInstanceLocalService _ddmFormInstanceLocalService;
+
+	@Reference(
+		target = "(model.class.name=com.liferay.dynamic.data.mapping.model.DDMFormInstance)"
+	)
+	private ModelResourcePermission<DDMFormInstance>
+		_ddmFormInstanceModelResourcePermission;
 
 	@Reference
 	private GroupLocalService _groupLocalService;
